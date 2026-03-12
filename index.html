@@ -1186,10 +1186,16 @@
                 state.problemText = document.getElementById('manualInput').value;
             }
             
-            if (!state.problemText || state.problemText.includes('请') || state.problemText.includes('识别')) {
+            // 清理题目文本，去除可能的无效内容
+            let cleanedProblem = state.problemText.trim();
+            // 检查是否为空或者只包含无效字符
+            if (!cleanedProblem || cleanedProblem === '-' || cleanedProblem.length < 2 || 
+                cleanedProblem.includes('请') || cleanedProblem.includes('识别') || 
+                cleanedProblem.includes('正在')) {
                 alert('请先输入或识别题目');
                 return;
             }
+            state.problemText = cleanedProblem;
             
             // 先跳转到分析页面，显示加载提示
             showPage('analysis');
