@@ -666,26 +666,12 @@
             <button class="btn btn-outline" style="margin-top: 10px;" onclick="goHome()">← 返回首页</button>
         </div>
 
-        <!-- Input/OCR Page -->
+        <!-- Input Page -->
         <div id="page-input" class="page">
-            <div class="tabs">
-                <button class="tab active" id="ocrTabBtn" onclick="switchInputTab('ocr')">📷 识别结果</button>
-                <button class="tab" id="manualTabBtn" onclick="switchInputTab('manual')">✏️ 手动输入</button>
-            </div>
-
-            <div id="ocrSection">
-                <div class="card">
-                    <h3 style="margin-bottom: 12px;">🔍 识别结果</h3>
-                    <div id="ocrResult" class="ocr-text">正在识别...</div>
-                </div>
-            </div>
-
-            <div id="manualSection" class="hidden">
-                <div class="card">
-                    <h3 style="margin-bottom: 12px;">✏️ 输入题目</h3>
-                    <div class="form-group">
-                        <textarea id="manualInput" placeholder="请输入数学题目..."></textarea>
-                    </div>
+            <div class="card">
+                <h3 style="margin-bottom: 12px;">✏️ 输入题目</h3>
+                <div class="form-group">
+                    <textarea id="manualInput" placeholder="请输入数学题目..."></textarea>
                 </div>
             </div>
 
@@ -718,7 +704,6 @@
                 </div>
             </div>
 
-            <button class="btn btn-primary" onclick="startGuidance()">开始答题引导 →</button>
             <button class="btn btn-outline" style="margin-top: 10px;" onclick="goHome()">← 返回首页</button>
         </div>
 
