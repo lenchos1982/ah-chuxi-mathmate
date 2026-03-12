@@ -754,7 +754,13 @@
             <div id="chatSection">
                 <div class="messages" id="messages"></div>
                 
-                <div style="text-align: center;">
+                <!-- 文本输入框 -->
+                <div class="input-row" style="margin-top: 12px;">
+                    <input type="text" id="textInput" placeholder="在这里输入你的想法或答案..." onkeypress="handleKeyPress(event)">
+                    <button class="btn btn-primary" style="width: auto; padding: 12px 20px;" onclick="sendUserMessage()">发送</button>
+                </div>
+                
+                <div style="text-align: center; margin-top: 12px;">
                     <button class="voice-btn" id="voiceBtn" onmousedown="startVoice()" onmouseup="stopVoice()" ontouchstart="startVoice()" ontouchend="stopVoice()">
                         🎤
                     </button>
@@ -1183,12 +1189,16 @@
                 return;
             }
             
-            // Get problem text
-            const ocrSection = document.getElementById('ocrSection');
-            if (!ocrSection.classList.contains('hidden')) {
-                state.problemText = document.getElementById('ocrResult').textContent;
-            } else {
-                state.problemText = document.getElementById('manualInput').value;
+            // Get problem text - 优先使用手动输入，OCR结果作为备选
+            const manualInput = document.getElementById('manualInput');
+            const ocrResult = document.getElementById('ocrResult');
+            
+            // 优先读取手动输入框的内容
+            if (manualInput && manualInput.value && manualInput.value.trim().length >= 2) {
+                state.problemText = manualInput.value.trim();
+            } else if (ocrResult) {
+                // 手动输入为空时才使用OCR结果
+                state.problemText = ocrResult.textContent;
             }
             
             // 清理题目文本，去除可能的无效内容
@@ -1204,6 +1214,7 @@
             
             // 先跳转到分析页面，显示加载提示
             showPage('analysis');
+            console.log('显示题目:', state.problemText);
             document.getElementById('problemText').textContent = state.problemText;
             
             // 显示加载状态
@@ -1431,68 +1442,188 @@
             }
         }
 
-        // ========== Guidance ==========
+        // ========== 对话式引导系统 ==========
+        // 新架构：AI实时对话，根据用户输入智能反馈
+        let conversationHistory = []; // 对话历史
+        let problemAnalysis = null; // 题目分析结果
+        
         function startGuidance() {
             showPage('guidance');
             document.getElementById('guidanceProblemText').textContent = state.problemText;
             
-            // Generate guidance steps
-            generateGuidanceSteps();
+            // 初始化对话式引导
+            initConversationGuide();
         }
 
-        async function generateGuidanceSteps() {
-            // 使用昨天确定的4步标准引导流程
-            // 第1步：审题 -> 第2步：建模 -> 第3步：分步计算 -> 第4步：验证
+        async function initConversationGuide() {
+            // 清空之前的状态
+            conversationHistory = [];
+            state.guidanceSteps = [];
+            state.currentStep = 0;
             
-            // 先用AI分析题目，提取关键信息
-            const prompt = `你是一个小学数学老师。请分析这道数学题，提取关键信息。
+            // 显示加载状态
+            const container = document.getElementById('stepsContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>AI正在分析题目...</p></div>';
+            
+            // 清空聊天记录
+            const messages = document.getElementById('messages');
+            messages.innerHTML = '';
+            
+            // 更新顶部提示
+            updateStepHint('🤔 AI正在分析题目...');
+            
+            // 开始AI对话式引导
+            await startConversationGuide();
+        }
+
+        async function startConversationGuide() {
+            // 用AI分析题目并开始对话引导
+            const analysisPrompt = `你是一个耐心的小学数学老师，正在帮助一个孩子解答数学题。
 
 题目：${state.problemText}
 
-请按以下格式输出（只输出JSON，不要其他内容）：
+请分析这道题，然后按以下JSON格式输出分析结果（只输出JSON，不要其他内容）：
 {
   "numbers": ["题目中出现的所有数字"],
   "keywords": ["题目中的关键词，如"比...少"、"是...的倍"、"合计"、"还剩"等"],
   "question": "题目最后问什么问题",
-  "operation": "这道题应该用什么运算（加法/减法/乘法/除法）"
+  "operation": "这道题应该用什么运算（加法/减法/乘法/除法）",
+  "solutionSteps": ["第一步应该做什么", "第二步应该做什么", "..."],
+  "correctAnswer": "最终答案是什么",
+  "formula": "正确的算式是什么"
 }`;
 
             try {
-                const response = await callAI(prompt);
+                const response = await callAI(analysisPrompt);
                 console.log('题目分析:', response);
-                const data = JSON.parse(response);
+                problemAnalysis = JSON.parse(response);
                 
-                // 构建4步引导流程
-                const numbers = data.numbers || [];
-                const keywords = data.keywords || [];
-                const question = data.question || '这道题在问什么？';
+                // 显示题目分析结果作为引导开始
+                const welcomeMsg = `📝 题目分析完成！
+
+已知数字：${problemAnalysis.numbers?.join('、') || '无'}
+关键词：${problemAnalysis.keywords?.join('、') || '无'}
+问题：${problemAnalysis.question}
+运算：${problemAnalysis.operation}
+
+我们一起来解答这道题吧！先想想：${problemAnalysis.solutionSteps?.[0] || '已知条件是什么？'}`;
+
+                addMessage('ai', welcomeMsg);
+                speak(problemAnalysis.solutionSteps?.[0] || '已知条件是什么？');
                 
-                // 生成4步标准引导
-                state.guidanceSteps = [
-                    // 第1步：审题
-                    { 
-                        type: 'step1_review', 
-                        title: '第1步-审题', 
-                        question: '请仔细读题，然后告诉我：题目已知哪些数？要求什么？有没有关键词？',
-                        hint: '找找题目中的数字和"比...少"、"是...倍"这类关键词',
-                        fillBlank: '我看到题目中有的数字是：___，关键词是：___，要求的问题是：___',
-                        answer: '' 
-                    },
-                    // 第2步：建模（数量关系）
-                    { 
-                        type: 'step2_model', 
-                        title: '第2步-建模', 
-                        question: '根据关键词，这道题是什么数量关系？（比什么少→减法，比什么多→加法，几倍→乘法，几分之几→除法，合计→加法，还剩→减法）',
-                        hint: keywords.length > 0 ? `题目中的关键词有：${keywords.join('、')}` : '想想看用什么运算？',
-                        fillBlank: '我分析是___运算，因为___',
-                        answer: data.operation || ''
-                    },
-                    // 第3步：分步计算
-                    { 
-                        type: 'step3_calculate', 
-                        title: '第3步-分步计算', 
-                        question: '根据已知条件，第一步可以算出什么？然后算什么？接下来呢？一步步来',
-                        hint: numbers.length > 0 ? `可以先用数字${numbers[0]}和${numbers[1] || numbers[0]}开始计算` : '一步步推导',
+                // 更新顶部提示
+                updateStepHint('💬 对话式引导中 - 和AI一起解答题目');
+                
+                // 显示对话输入框（如果有的话）
+                showConversationInput();
+                
+            } catch (err) {
+                console.error('分析失败:', err);
+                addMessage('ai', '抱歉，分析题目时出了点问题。让我们直接开始吧！\n\n请告诉我：这道题已知哪些数？要求什么？');
+                updateStepHint('💬 对话式引导中');
+            }
+        }
+
+        async function handleUserMessage(userInput) {
+            if (!userInput || !userInput.trim()) return;
+            
+            // 显示用户消息
+            addMessage('user', userInput);
+            conversationHistory.push({ role: 'user', content: userInput });
+            
+            // 更新顶部提示
+            updateStepHint('🤔 AI正在思考...');
+            
+            // 调用AI进行智能回复
+            try {
+                const aiResponse = await getSmartResponse(userInput);
+                addMessage('ai', aiResponse.message);
+                conversationHistory.push({ role: 'ai', content: aiResponse.message });
+                
+                // 检查是否完成解题
+                if (aiResponse.isComplete) {
+                    setTimeout(() => {
+                        finishGuidance();
+                    }, 2000);
+                }
+                
+                // 更新提示
+                updateStepHint('💬 对话式引导中 - 和AI一起解答题目');
+                
+            } catch (err) {
+                console.error('AI响应失败:', err);
+                addMessage('ai', '嗯，让我想想... 你能再说一遍吗？');
+                updateStepHint('💬 对话式引导中');
+            }
+        }
+
+        async function getSmartResponse(userInput) {
+            // 构建提示，让AI根据用户输入给出合适的反馈
+            const context = conversationHistory.slice(-4).map(m => 
+                `${m.role === 'user' ? '孩子' : '老师'}: ${m.content}`
+            ).join('\n');
+            
+            const prompt = `你是一个小学数学老师，正在通过对话引导孩子解题。
+
+题目：${state.problemText}
+题目分析：${JSON.stringify(problemAnalysis)}
+
+对话历史：
+${context}
+
+孩子刚才说：${userInput}
+
+请根据孩子的话，给出合适的回复。要求：
+1. 如果孩子说对了 → 大力鼓励
+2. 如果孩子接近答案 → 给予提示继续引导
+3. 如果孩子说错了 → 温和地提示再想想
+4. 如果孩子问到解题方法 → 给出下一步提示
+5. 如果孩子算错了 → 指出可能哪里算错了
+
+同时判断孩子是否已经完成解题（说出了正确答案或正确算式）。
+
+请按以下JSON格式输出：
+{
+  "message": "你对孩子说的话（要温和、有鼓励性）",
+  "isComplete": true或false,
+  "feedback": "positive/negative/hint" // 正向/负向/提示
+}`;
+
+            const response = await callAI(prompt);
+            const data = JSON.parse(response);
+            return data;
+        }
+
+        function showConversationInput() {
+            // 确保聊天输入框可见并可用
+            const inputArea = document.querySelector('#chatSection');
+            if (inputArea) {
+                inputArea.style.display = 'block';
+            }
+            
+            // 如果页面有文本输入框，让它可用
+            const textInput = document.getElementById('textInput');
+            if (textInput) {
+                textInput.placeholder = '在这里输入你的想法或答案...';
+            }
+        }
+
+        function updateStepHint(text) {
+            let hintDiv = document.getElementById('stepHint');
+            if (!hintDiv) {
+                hintDiv = document.createElement('div');
+                hintDiv.id = 'stepHint';
+                hintDiv.style.cssText = "position:fixed; top:60px; left:0; right:0; background:#4CAF50; color:white; padding:12px; text-align:center; font-size:16px; z-index:1000; box-shadow:0 2px 4px rgba(0,0,0,0.1);";
+                document.body.insertBefore(hintDiv, document.body.firstChild);
+            }
+            hintDiv.textContent = text;
+        }
+
+        // 旧版函数保留兼容（重定向到新系统）
+        async function generateGuidanceSteps() {
+            // 兼容旧调用，实际上现在使用对话式引导
+            await initConversationGuide();
+        }
                         fillBlank: '第一步：___ = ___\n第二步：___ = ___\n第三步：___ = ___',
                         answer: '' 
                     },
@@ -1555,86 +1686,25 @@
         }
 
         function renderGuidanceSteps() {
-            // 显示顶部提示 - 根据步骤类型显示不同提示
-            const step = state.guidanceSteps[state.currentStep];
-            let hintText = "请在下方输入答案";
-            if (step) {
-                if (step.type === 'step1_review') hintText = "第1步-审题：请找出题目中的已知数和关键词";
-                else if (step.type === 'step2_model') hintText = "第2步-建模：判断数量关系（比...少→减法，比...多→加法，几倍→乘法）";
-                else if (step.type === 'step3_calculate') hintText = "第3步-分步计算：一步步来，先算第一步";
-                else if (step.type === 'step4_verify') hintText = "第4步-验证：把答案代回去检查";
-            }
+            // 对话式引导模式：显示对话提示，不显示固定步骤卡片
+            updateStepHint('💬 对话式引导中 - 和AI一起解答题目');
             
-            // 添加或更新顶部提示
-            let hintDiv = document.getElementById('stepHint');
-            if (!hintDiv) {
-                hintDiv = document.createElement('div');
-                hintDiv.id = 'stepHint';
-                hintDiv.style.cssText = "position:fixed; top:60px; left:0; right:0; background:#4CAF50; color:white; padding:12px; text-align:center; font-size:16px; z-index:1000; box-shadow:0 2px 4px rgba(0,0,0,0.1);";
-                document.body.insertBefore(hintDiv, document.body.firstChild);
-            }
-            hintDiv.textContent = hintText;
             const container = document.getElementById('stepsContainer');
-            container.innerHTML = '';
+            // 清空步骤容器，显示对话模式提示
+            container.innerHTML = `
+                <div style="text-align: center; padding: 20px; color: #666;">
+                    <div style="font-size: 40px; margin-bottom: 12px;">💬</div>
+                    <p>正在与AI对话中...</p>
+                    <p style="font-size: 13px;">在下方输入你的想法或答案，AI会引导你完成解答</p>
+                </div>
+            `;
             
-            state.guidanceSteps.forEach((step, i) => {
-                // 只显示当前步骤和之前的步骤，不显示未来的步骤
-                if (i > state.currentStep) return;
-                
-                const card = document.createElement('div');
-                card.className = `step-card ${i < state.currentStep ? 'completed' : ''} ${i === state.currentStep ? 'active' : ''}`;
-                
-                // 根据步骤类型使用不同颜色
-                let borderColor = '#6C5CE7';
-                if (step.type === 'step1_review') borderColor = '#3498db'; // 蓝色 - 审题
-                else if (step.type === 'step2_model') borderColor = '#9b59b6'; // 紫色 - 建模
-                else if (step.type === 'step3_calculate') borderColor = '#e67e22'; // 橙色 - 计算
-                else if (step.type === 'step4_verify') borderColor = '#27ae60'; // 绿色 - 验证
-                
-                card.style.borderLeftColor = borderColor;
-                
-                const userAnswer = state.userAnswers[i] || '';
-                
-                if (i === state.currentStep) {
-                    // 当前步骤：显示输入框
-                    const inputHtml = `
-                        <div style="margin-top: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px; border-left: 4px solid ${borderColor};">
-                            <div style="font-size: 15px; margin-bottom: 12px; color: #333; line-height: 1.6;">👉 ${step.question}</div>
-                            <div style="font-size: 13px; color: #666; margin-bottom: 12px; padding: 8px; background: #fff3cd; border-radius: 6px;">💡 提示：${step.hint}</div>
-                            <textarea id="stepInput" placeholder="请写下你的答案..." style="width: 100%; padding: 12px; border: 2px solid ${borderColor}; border-radius: 8px; font-size: 15px; min-height: 80px; resize: vertical;"></textarea>
-                            <button class="btn btn-primary" style="margin-top: 12px;" onclick="submitStepAnswer()">确认答案</button>
-                        </div>
-                    `;
-                    
-                    card.innerHTML = `
-                        <span class="step-number" style="background:${borderColor}">${i + 1}</span>
-                        <strong>${step.title}</strong>
-                        ${inputHtml}
-                    `;
-                } else {
-                    // 非当前步骤：只显示摘要
-                    const statusIcon = i < state.currentStep ? '✅' : '⏳';
-                    card.innerHTML = `
-                        <span class="step-number" style="background:${i < state.currentStep ? '#27ae60' : '#bdc3c7'}">${statusIcon}</span>
-                        <strong>${step.title}</strong>
-                        <div style="margin-top: 8px; font-size: 13px; color: #666; padding: 8px; background: #f5f5f5; border-radius: 6px;">
-                            ${userAnswer || '未完成'}
-                        </div>
-                    `;
-                }
-                container.appendChild(card);
-            });
+            // 确保聊天输入框可用
+            showConversationInput();
             
-            // Show welcome message for first step
-            if (state.currentStep === 0) {
-                const firstStep = state.guidanceSteps[0];
-                addMessage('ai', `小朋友，你好！🎉\n\n我们用4步来解决这道题：\n1️⃣ 审题 - 找出已知数和关键词\n2️⃣ 建模 - 判断用什么运算\n3️⃣ 分步计算 - 一步步算出答案\n4️⃣ 验证 - 代回去检查对不对\n\n现在我们开始第1步：${firstStep.question}\n\n在下方输入你的答案吧~`);
-                speak('你好！我们用4步来解决这道数学题，先找出已知条件和关键词！');
-            }
-            
-            // Focus input
+            // Focus 输入框
             setTimeout(() => {
-                const input = document.getElementById('stepInput');
+                const input = document.getElementById('textInput');
                 if (input) input.focus();
             }, 100);
         }
@@ -1781,15 +1851,15 @@
         }
 
         function handleUserAnswer(answer) {
-            // 路由到填空题处理
-            submitStepAnswer();
+            // 路由到对话式引导处理
+            handleUserMessage(answer);
         }
 
         function submitTextAnswer() {
             const input = document.getElementById('textInput');
             const answer = input.value.trim();
             if (answer) {
-                handleUserAnswer(answer);
+                handleUserMessage(answer);
                 input.value = '';
             }
         }
