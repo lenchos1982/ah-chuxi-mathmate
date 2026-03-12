@@ -1306,23 +1306,31 @@
             console.log('API Key:', state.apiKey ? state.apiKey.slice(0,10) + '...' : 'empty');
             console.log('请求体:', JSON.stringify(config.body));
             
-            // 显示在界面上帮助调试
-            document.getElementById('analysisContent').innerHTML = `
-                <div style="font-size:12px; color:#666; text-align:left;">
-                <p>模型: ${state.model}</p>
-                <p>URL: ${state.apiUrl}</p>
-                <p>Key: ${state.apiKey ? '已设置' : '未设置'}</p>
-                </div>
-                <div class="loading"><div class="spinner"></div></div>
-            `;
+            // 只在analysis页面显示加载状态，不影响guidance页面
+            const analysisContent = document.getElementById('analysisContent');
+            if (analysisContent && !analysisContent.classList.contains('hidden')) {
+                analysisContent.innerHTML = `
+                    <div style="font-size:12px; color:#666; text-align:left;">
+                    <p>模型: ${state.model}</p>
+                    <p>URL: ${state.apiUrl}</p>
+                    <p>Key: ${state.apiKey ? '已设置' : '未设置'}</p>
+                    </div>
+                    <div class="loading"><div class="spinner"></div></div>
+                `;
+            }
             
-            // 直接调用API（如果失败再试代理）
+            // 添加超时处理（30秒）
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('AI响应超时，请重试')), 30000)
+            );
+            
+            // 直接调用API（如果失败再试代理），带超时
             let apiEndpoint = state.apiUrl;
             
             let response;
             try {
-                // 先尝试直接调用
-                response = await fetch('/api/chat', {
+                // 创建fetch promise并添加超时
+                const fetchPromise = fetch('/api/chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1335,6 +1343,9 @@
                                 apiUrl: state.apiUrl
                             })
                 });
+                
+                // 竞态处理：谁先完成用谁
+                response = await Promise.race([fetchPromise, timeoutPromise]);
             } catch (fetchErr) {
                 console.error('直接调用失败:', fetchErr);
                 // 尝试用多个CORS代理
@@ -1451,6 +1462,14 @@
             showPage('guidance');
             document.getElementById('guidanceProblemText').textContent = state.problemText;
             
+            // 清除之前的聊天记录
+            const messages = document.getElementById('messages');
+            if (messages) messages.innerHTML = '';
+            
+            // 清除之前的步骤提示
+            const hintDiv = document.getElementById('stepHint');
+            if (hintDiv) hintDiv.remove();
+            
             // 初始化对话式引导
             initConversationGuide();
         }
@@ -1463,11 +1482,23 @@
             
             // 显示加载状态
             const container = document.getElementById('stepsContainer');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>AI正在分析题目...</p></div>';
+            if (container) container.innerHTML = '<div class="loading"><div class="spinner"></div><p>AI正在分析题目...</p></div>';
             
             // 清空聊天记录
             const messages = document.getElementById('messages');
-            messages.innerHTML = '';
+            if (messages) messages.innerHTML = '';
+            
+            // 确保输入框可见
+            const textInput = document.getElementById('textInput');
+            if (textInput) {
+                textInput.style.display = 'block';
+                textInput.placeholder = '在这里输入你的想法或答案...';
+                textInput.value = '';
+            }
+            
+            // 确保输入行可见
+            const inputRow = document.querySelector('#chatSection .input-row');
+            if (inputRow) inputRow.style.display = 'flex';
             
             // 更新顶部提示
             updateStepHint('🤔 AI正在分析题目...');
@@ -1498,7 +1529,7 @@
                 console.log('题目分析:', response);
                 problemAnalysis = JSON.parse(response);
                 
-                // 显示题目分析结果作为引导开始
+                // 只显示题目信息，不暴露答案和步骤
                 const welcomeMsg = `📝 题目分析完成！
 
 已知数字：${problemAnalysis.numbers?.join('、') || '无'}
@@ -1506,21 +1537,23 @@
 问题：${problemAnalysis.question}
 运算：${problemAnalysis.operation}
 
-我们一起来解答这道题吧！先想想：${problemAnalysis.solutionSteps?.[0] || '已知条件是什么？'}`;
+我们一起来解答这道题吧！先仔细读题，告诉我你看到了什么？`;
 
                 addMessage('ai', welcomeMsg);
-                speak(problemAnalysis.solutionSteps?.[0] || '已知条件是什么？');
+                speak('你好！我们一起来解答这道数学题。先仔细读题，告诉我你看到了什么？');
                 
                 // 更新顶部提示
                 updateStepHint('💬 对话式引导中 - 和AI一起解答题目');
                 
-                // 显示对话输入框（如果有的话）
+                // 显示对话输入框
                 showConversationInput();
                 
             } catch (err) {
                 console.error('分析失败:', err);
-                addMessage('ai', '抱歉，分析题目时出了点问题。让我们直接开始吧！\n\n请告诉我：这道题已知哪些数？要求什么？');
+                // 出错时给出简单的引导，不暴露任何答案信息
+                addMessage('ai', '你好！我们一起来解答这道题。\n\n请先仔细读题，然后告诉我：这道题已知哪些数？要求什么问题？');
                 updateStepHint('💬 对话式引导中');
+                showConversationInput();
             }
         }
 
@@ -1558,15 +1591,20 @@
         }
 
         async function getSmartResponse(userInput) {
-            // 构建提示，让AI根据用户输入给出合适的反馈
+            // 构建提示，让AI根据用户输入给出合适的反馈（不暴露答案）
             const context = conversationHistory.slice(-4).map(m => 
                 `${m.role === 'user' ? '孩子' : '老师'}: ${m.content}`
             ).join('\n');
             
+            // 不传递正确答案给AI，防止暴露
             const prompt = `你是一个小学数学老师，正在通过对话引导孩子解题。
 
 题目：${state.problemText}
-题目分析：${JSON.stringify(problemAnalysis)}
+题目关键信息：
+- 已知数字：${problemAnalysis?.numbers?.join('、') || '未知'}
+- 关键词：${problemAnalysis?.keywords?.join('、') || '未知'}
+- 问题：${problemAnalysis?.question || '未知'}
+- 运算类型：${problemAnalysis?.operation || '未知'}
 
 对话历史：
 ${context}
@@ -1574,19 +1612,19 @@ ${context}
 孩子刚才说：${userInput}
 
 请根据孩子的话，给出合适的回复。要求：
-1. 如果孩子说对了 → 大力鼓励
-2. 如果孩子接近答案 → 给予提示继续引导
-3. 如果孩子说错了 → 温和地提示再想想
-4. 如果孩子问到解题方法 → 给出下一步提示
-5. 如果孩子算错了 → 指出可能哪里算错了
+1. 如果孩子说对了 → 大力鼓励，但不要直接说答案
+2. 如果孩子接近答案 → 给予提示继续引导（提示方向，不要说具体数字）
+3. 如果孩子说错了 → 温和地提示再想想（提示思考方向，不要说答案）
+4. 如果孩子问到解题方法 → 给出下一步思考方向
+5. 如果孩子算错了 → 指出可能哪里算错了（不要说正确答案）
 
-同时判断孩子是否已经完成解题（说出了正确答案或正确算式）。
+重要：绝对不能在回复中直接告诉孩子正确答案或算式！只能引导思考方向。
 
 请按以下JSON格式输出：
 {
-  "message": "你对孩子说的话（要温和、有鼓励性）",
+  "message": "你对孩子说的话（温和、有鼓励性，不暴露答案）",
   "isComplete": true或false,
-  "feedback": "positive/negative/hint" // 正向/负向/提示
+  "feedback": "positive/negative/hint"
 }`;
 
             const response = await callAI(prompt);
@@ -1601,10 +1639,21 @@ ${context}
                 inputArea.style.display = 'block';
             }
             
-            // 如果页面有文本输入框，让它可用
+            // 如果页面有文本输入框，让它可用并获取焦点
             const textInput = document.getElementById('textInput');
             if (textInput) {
                 textInput.placeholder = '在这里输入你的想法或答案...';
+                textInput.style.display = 'block';
+                // 延迟一下让DOM渲染完成
+                setTimeout(() => {
+                    textInput.focus();
+                }, 100);
+            }
+            
+            // 确保输入行可见
+            const inputRow = textInput?.closest('.input-row');
+            if (inputRow) {
+                inputRow.style.display = 'flex';
             }
         }
 
@@ -1623,66 +1672,6 @@ ${context}
         async function generateGuidanceSteps() {
             // 兼容旧调用，实际上现在使用对话式引导
             await initConversationGuide();
-        }
-                        fillBlank: '第一步：___ = ___\n第二步：___ = ___\n第三步：___ = ___',
-                        answer: '' 
-                    },
-                    // 第4步：验证
-                    { 
-                        type: 'step4_verify', 
-                        title: '第4步-验证', 
-                        question: '把你算出的答案代入题目检查，对不对？',
-                        hint: '把答案代回去算一算，看看是否符合题目条件',
-                        fillBlank: '代入验证：___ 正确吗？（对/错）',
-                        answer: '对'
-                    }
-                ];
-                
-                state.currentStep = 0;
-                state.userAnswers = [];
-                renderGuidanceSteps();
-                
-            } catch (err) {
-                console.error('生成失败:', err);
-                // Fallback：使用标准4步但简化
-                state.guidanceSteps = [
-                    { 
-                        type: 'step1_review', 
-                        title: '第1步-审题', 
-                        question: '题目已知哪些数？要求什么？有没有关键词？', 
-                        hint: '找找题目中的数字',
-                        fillBlank: '已知数：___ 要求：___ 关键词：___',
-                        answer: '' 
-                    },
-                    { 
-                        type: 'step2_model', 
-                        title: '第2步-建模', 
-                        question: '比什么少→减法，比什么多→加法，几倍→乘法，几分之几→除法，合计→加法', 
-                        hint: '判断数量关系',
-                        fillBlank: '我分析是___运算',
-                        answer: '' 
-                    },
-                    { 
-                        type: 'step3_calculate', 
-                        title: '第3步-分步计算', 
-                        question: '第一步可以算出什么？然后算什么？接下来呢？', 
-                        hint: '一步步来',
-                        fillBlank: '第一步：___\n第二步：___\n第三步：___',
-                        answer: '' 
-                    },
-                    { 
-                        type: 'step4_verify', 
-                        title: '第4步-验证', 
-                        question: '代入题目检查，对不对？', 
-                        hint: '代回去算一算',
-                        fillBlank: '验证结果：对/错',
-                        answer: '对' 
-                    }
-                ];
-                state.currentStep = 0;
-                state.userAnswers = [];
-                renderGuidanceSteps();
-            }
         }
 
         function renderGuidanceSteps() {
@@ -1964,6 +1953,174 @@ ${context}
         }
 
         loadSession();
+
+        // ========== 对话式引导 - 发送消息 ==========
+        function sendUserMessage() {
+            const textInput = document.getElementById('textInput');
+            if (!textInput) return;
+            
+            const userInput = textInput.value.trim();
+            if (!userInput) return;
+            
+            // 清空输入框
+            textInput.value = '';
+            
+            // 调用消息处理
+            handleUserMessage(userInput);
+        }
+        
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendUserMessage();
+            }
+        }
+
+        // ========== 增强的智能回复 - 包含计算验证 ==========
+        async function getSmartResponse(userInput) {
+            // 先检查用户是否给出了答案或算式
+            const hasNumber = /\d+/.test(userInput);
+            const hasOperator = /[+\-×*÷=]/.test(userInput);
+            
+            // 如果用户给出了算式或答案，进行计算验证
+            if (hasNumber && problemAnalysis && (hasOperator || userInput.includes('答案') || userInput.includes('等于'))) {
+                const validationResult = await validateAnswer(userInput);
+                if (validationResult.isValidAnswer || validationResult.isValidFormula) {
+                    // 用户给出了正确答案或正确算式
+                    const feedback = validationResult.isValidAnswer && validationResult.isValidFormula 
+                        ? '完全正确！列式和计算都对！' 
+                        : validationResult.isValidFormula 
+                            ? '列式对的！但计算再检查一下~' 
+                            : '答案对了！列式再想想？';
+                    
+                    return {
+                        message: `🎉 ${feedback}\n\n${validationResult.isValidAnswer && validationResult.isValidFormula ? '太棒了！你完全做对了！🎊' : '再仔细算一算哦~'} `,
+                        isComplete: validationResult.isValidAnswer && validationResult.isValidFormula,
+                        feedback: validationResult.isValidAnswer && validationResult.isValidFormula ? 'positive' : 'hint'
+                    };
+                }
+            }
+            
+            // 继续使用AI进行对话式引导
+            const context = conversationHistory.slice(-4).map(m => 
+                `${m.role === 'user' ? '孩子' : '老师'}: ${m.content}`
+            ).join('\n');
+            
+            const prompt = `你是一个小学数学老师，正在通过对话引导孩子解题。
+
+题目：${state.problemText}
+题目分析：${JSON.stringify(problemAnalysis || {})}
+
+对话历史：
+${context}
+
+孩子刚才说：${userInput}
+
+请根据孩子的话，给出合适的回复。要求：
+1. 如果孩子说对了 → 大力鼓励，简洁指出对在哪
+2. 如果孩子接近答案 → 给予提示继续引导
+3. 如果孩子说错了 → 温和地提示再想想，不要直接给答案
+4. 如果孩子问到解题方法 → 给出下一步提示
+5. 如果孩子在思考 → 鼓励并给一个小提示
+
+回复要简短，适合小学生理解（最多2句话），语气温柔有耐心。
+
+请按以下JSON格式输出：
+{
+  "message": "你对孩子说的话",
+  "isComplete": true或false,
+  "feedback": "positive/negative/hint"
+}`;
+
+            try {
+                const response = await callAI(prompt);
+                const data = JSON.parse(response);
+                return data;
+            } catch (err) {
+                console.error('AI响应解析失败:', err);
+                return {
+                    message: '嗯，你想得很棒！再想想看~',
+                    isComplete: false,
+                    feedback: 'hint'
+                };
+            }
+        }
+
+        // ========== 计算验证 - 检查列式和计算是否正确 ==========
+        async function validateAnswer(userInput) {
+            if (!problemAnalysis) return { isValidAnswer: false, isValidFormula: false };
+            
+            const correctAnswer = problemAnalysis.correctAnswer || '';
+            const correctFormula = problemAnalysis.formula || '';
+            
+            // 提取用户给出的数字和算式
+            const userNumbers = userInput.match(/\d+/g) || [];
+            const correctNumbers = correctAnswer.match(/\d+/g) || [];
+            const formulaNumbers = correctFormula ? correctFormula.match(/\d+/g) || [] : [];
+            
+            // 检查答案数字是否匹配
+            let isValidAnswer = false;
+            if (userNumbers.length > 0 && correctNumbers.length > 0) {
+                // 检查是否包含所有正确的数字
+                const hasAllCorrectNumbers = correctNumbers.every(n => userNumbers.includes(n));
+                // 检查数字顺序是否合理
+                isValidAnswer = hasAllCorrectNumbers && userNumbers.length >= correctNumbers.length * 0.5;
+            }
+            
+            // 检查算式是否正确
+            let isValidFormula = false;
+            if (correctFormula && userInput.includes('=')) {
+                // 提取等式两边的表达式
+                const userExpr = userInput.split('=')[0].trim();
+                const correctExpr = correctFormula.split('=')[0].trim();
+                
+                // 简化比较：检查数字和运算符
+                const userOps = userInput.replace(/[\d\s]/g, '');
+                const correctOps = correctFormula.replace(/[\d\s]/g, '');
+                
+                // 检查是否使用了正确的运算符
+                const opMatch = (userOps.replace(/[^\+\-\*×÷]/g, '') === correctOps.replace(/[^\+\-\*×÷]/g, ''));
+                
+                // 检查数字是否都包含
+                const hasFormulaNumbers = formulaNumbers.every(n => userNumbers.includes(n));
+                
+                isValidFormula = opMatch && hasFormulaNumbers;
+                
+                // 如果有算式，尝试计算验证
+                if (isValidFormula) {
+                    try {
+                        // 简单计算验证（只支持基本运算）
+                        const userCalc = evalSimpleExpression(userExpr);
+                        const correctCalc = evalSimpleExpression(correctExpr);
+                        if (userCalc !== null && correctCalc !== null) {
+                            isValidFormula = userCalc === correctCalc;
+                        }
+                    } catch (e) {
+                        console.log('计算验证跳过:', e.message);
+                    }
+                }
+            }
+            
+            // 也检查纯数字答案
+            if (!isValidAnswer && userNumbers.length === 1 && correctNumbers.length === 1) {
+                isValidAnswer = userNumbers[0] === correctNumbers[0];
+            }
+            
+            return { isValidAnswer, isValidFormula };
+        }
+
+        // 简单的表达式计算器（支持加减乘除）
+        function evalSimpleExpression(expr) {
+            try {
+                // 替换中文运算符
+                let e = expr.replace(/×/g, '*').replace(/÷/g, '/').replace(/／/g, '/');
+                // 只允许数字和运算符
+                if (!/^[\d\s\+\-\*\/\(\)\.]+$/.test(e)) return null;
+                // 安全计算
+                return Function('"use strict";return (' + e + ')')();
+            } catch {
+                return null;
+            }
+        }
     </script>
 </body>
 </html>
