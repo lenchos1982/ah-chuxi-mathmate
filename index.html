@@ -1625,6 +1625,7 @@
                 alert(successMsg);
                 speak(currentStep.type === 'step4_verify' ? '太棒了，题目完成！' : '答对了！');
                 
+                // 答对：跳转到下一步
                 setTimeout(() => {
                     nextStep();
                 }, 1000);
@@ -1638,6 +1639,20 @@
                 } else {
                     alert(`不对哦，再试一次！💪 (还剩${3 - state.errorCount}次机会)`);
                     speak('再想想看，给你一点点提示');
+                    
+                    // 答错后：清空输入框，重新渲染当前步骤，让用户重新填写
+                    setTimeout(() => {
+                        // 清空输入框
+                        const newInput = document.getElementById('stepInput');
+                        if (newInput) newInput.value = '';
+                        
+                        // 重新渲染当前步骤
+                        renderGuidanceSteps();
+                        
+                        // 给用户焦点
+                        const inputEl = document.getElementById('stepInput');
+                        if (inputEl) inputEl.focus();
+                    }, 500);
                 }
             }
         }
