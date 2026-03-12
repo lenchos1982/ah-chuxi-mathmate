@@ -1508,20 +1508,17 @@
         }
 
         async function startConversationGuide() {
-            // 用AI分析题目并开始对话引导
-            const analysisPrompt = `你是一个耐心的小学数学老师，正在帮助一个孩子解答数学题。
+            // 用AI分析题目（只需要基本信息，不需要答案）
+            const analysisPrompt = `你是一个小学数学老师。请分析这道题，提取以下信息（只输出JSON）：
 
 题目：${state.problemText}
 
-请分析这道题，然后按以下JSON格式输出分析结果（只输出JSON，不要其他内容）：
+请按以下JSON格式输出：
 {
   "numbers": ["题目中出现的所有数字"],
-  "keywords": ["题目中的关键词，如"比...少"、"是...的倍"、"合计"、"还剩"等"],
-  "question": "题目最后问什么问题",
-  "operation": "这道题应该用什么运算（加法/减法/乘法/除法）",
-  "solutionSteps": ["第一步应该做什么", "第二步应该做什么", "..."],
-  "correctAnswer": "最终答案是什么",
-  "formula": "正确的算式是什么"
+  "keywords": ["关键词如"比...少"、"是...倍"等"],
+  "question": "最后问什么问题",
+  "operation": "用什么运算"
 }`;
 
             try {
@@ -1529,15 +1526,17 @@
                 console.log('题目分析:', response);
                 problemAnalysis = JSON.parse(response);
                 
-                // 只显示题目信息，不暴露答案和步骤
-                const welcomeMsg = `📝 题目分析完成！
+                // 欢迎消息，不暴露答案
+                const welcomeMsg = `你好呀！👋 我是小Math老师～
 
-已知数字：${problemAnalysis.numbers?.join('、') || '无'}
-关键词：${problemAnalysis.keywords?.join('、') || '无'}
-问题：${problemAnalysis.question}
-运算：${problemAnalysis.operation}
+📝 题目：${state.problemText}
 
-我们一起来解答这道题吧！先仔细读题，告诉我你看到了什么？`;
+我看到题目里有这些信息：
+- 数字：${problemAnalysis?.numbers?.join('、') || '还没看清'}
+- 关键词：${problemAnalysis?.keywords?.join('、') || '还没找到'}
+- 问题：${problemAnalysis?.question || '还没看懂'}
+
+我们一起来解答吧！先告诉我，你看到了什么？`;
 
                 addMessage('ai', welcomeMsg);
                 speak('你好！我们一起来解答这道数学题。先仔细读题，告诉我你看到了什么？');
@@ -1590,42 +1589,61 @@
             }
         }
 
+        // ========== System Prompt ==========
+        const SYSTEM_PROMPT = `你是一个非常有耐心、超级喜欢小朋友的小学数学老师。你的名字叫"小Math老师"。
+
+【核心原则】
+1. 绝对不直接告诉孩子答案！
+2. 通过提问和提示引导孩子自己思考出答案
+3. 孩子需要的是"渔"而不是"鱼"
+
+【判断逻辑】
+- 孩子说对了 → 大力表扬鼓励，然后给一个思考下一步的提示
+- 孩子接近答案了 → 给一点提示，帮助他想到正确答案
+- 孩子说错了 → 温柔地说"再想想哦"，给一个思考方向的提示
+- 孩子说不会 → 分解问题，问一个更简单的小问题
+
+【输出风格】
+- 语言简单易懂，适合小学生
+- 多用"你真棒！"、"加油！"、"想想看..."等鼓励的话
+- 每次回复控制在50字以内，太长孩子会看不下去
+- 适当用 emoji 让对话更有趣
+
+【重要规则】
+- 绝对不能在回复中包含正确答案或完整算式
+- 只能给出思考方向的提示
+- 判断解题是否完成的标准：孩子说出了最终答案数字
+
+请按以下JSON格式输出：
+{
+  "message": "你对孩子说的话",
+  "isComplete": true或false,
+  "feedback": "positive/negative/hint"
+}`;
+
         async function getSmartResponse(userInput) {
-            // 构建提示，让AI根据用户输入给出合适的反馈（不暴露答案）
+            // 构建对话上下文
             const context = conversationHistory.slice(-4).map(m => 
-                `${m.role === 'user' ? '孩子' : '老师'}: ${m.content}`
+                `${m.role === 'user' ? '小朋友' : '小Math老师'}: ${m.content}`
             ).join('\n');
             
-            // 不传递正确答案给AI，防止暴露
-            const prompt = `你是一个小学数学老师，正在通过对话引导孩子解题。
+            // 完整的prompt，包含system prompt
+            const prompt = `${SYSTEM_PROMPT}
 
-题目：${state.problemText}
-题目关键信息：
+【当前题目】
+${state.problemText}
 - 已知数字：${problemAnalysis?.numbers?.join('、') || '未知'}
 - 关键词：${problemAnalysis?.keywords?.join('、') || '未知'}
 - 问题：${problemAnalysis?.question || '未知'}
 - 运算类型：${problemAnalysis?.operation || '未知'}
 
-对话历史：
+【对话历史】
 ${context}
 
-孩子刚才说：${userInput}
+【孩子现在说】
+${userInput}
 
-请根据孩子的话，给出合适的回复。要求：
-1. 如果孩子说对了 → 大力鼓励，但不要直接说答案
-2. 如果孩子接近答案 → 给予提示继续引导（提示方向，不要说具体数字）
-3. 如果孩子说错了 → 温和地提示再想想（提示思考方向，不要说答案）
-4. 如果孩子问到解题方法 → 给出下一步思考方向
-5. 如果孩子算错了 → 指出可能哪里算错了（不要说正确答案）
-
-重要：绝对不能在回复中直接告诉孩子正确答案或算式！只能引导思考方向。
-
-请按以下JSON格式输出：
-{
-  "message": "你对孩子说的话（温和、有鼓励性，不暴露答案）",
-  "isComplete": true或false,
-  "feedback": "positive/negative/hint"
-}`;
+请根据以上信息，给出合适的回复。`;
 
             const response = await callAI(prompt);
             const data = JSON.parse(response);
