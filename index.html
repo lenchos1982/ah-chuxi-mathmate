@@ -918,6 +918,11 @@
             console.log('加载设置 - 模型:', state.model, 'URL:', state.apiUrl, '语言:', state.language);
             
             loadVoices();
+            
+            // 应用语言设置
+            if (state.language === 'zh-TW') {
+                applyLanguage(state.language);
+            }
         }
 
         function saveSettings() {
@@ -943,7 +948,86 @@
             const msg = '设置已保存！\n模型: ' + selectedModelName + '\n语种: ' + langName;
             console.log(msg);
             alert(msg);
+            
+            // 应用语言设置
+            applyLanguage(state.language);
         }
+
+        // 语言映射表
+        const translations = {
+            'zh-CN': {},
+            'zh-TW': {
+                // 首页
+                '欢迎来到 MathMate': '歡迎來到 MathMate',
+                '小学数学AI答疑小助手': '小學數學AI答疑小助手',
+                '手动输入': '手動輸入',
+                '设置': '設置',
+                '学习报告': '學習報告',
+                // 题目输入页
+                '请输入数学题目': '請輸入數學題目',
+                '开始分析': '開始分析',
+                '请先在设置中填写 API Key': '請先在設置中填寫 API Key',
+                // 分析页
+                '开始解答': '開始解答',
+                // 引导页
+                '对话式引导中': '對話式引導中',
+                // 总结页
+                '太棒了！': '太棒了！',
+                '你完成了一道数学题！': '你完成了一道數學題！',
+                '今天学到什么？': '今天學到什麼？',
+                '查看薄弱点报告': '查看薄弱點報告',
+                // 设置页
+                'AI 大模型': 'AI 大模型',
+                'API Key': 'API Key',
+                '语种选择': '語種選擇',
+                '保存设置': '儲存設定',
+                '返回首页': '返回首頁',
+                '声音选择': '聲音選擇',
+                '测试语音': '測試語音',
+            }
+        };
+
+        // 应用语言设置到界面
+        function applyLanguage(lang) {
+            // 直接刷新页面，利用页面加载时应用语言
+            if (lang === 'zh-TW') {
+                // 将语言标记存到sessionStorage，页面加载时自动应用
+                sessionStorage.setItem('pendingLanguage', 'zh-TW');
+            } else {
+                sessionStorage.removeItem('pendingLanguage');
+            }
+            location.reload();
+        }
+
+        // 页面加载时自动应用待定的语言设置
+        function initLanguage() {
+            const pendingLang = sessionStorage.getItem('pendingLanguage');
+            if (pendingLang === 'zh-TW') {
+                // 替换页面中的简体文字为繁体
+                const trans = translations['zh-TW'];
+                const walker = document.createTreeWalker(
+                    document.body,
+                    NodeFilter.SHOW_TEXT,
+                    null,
+                    false
+                );
+                let node;
+                while (node = walker.nextNode()) {
+                    const text = node.textContent;
+                    let newText = text;
+                    for (const [cn, tw] of Object.entries(trans)) {
+                        newText = newText.replace(new RegExp(cn, 'g'), tw);
+                    }
+                    if (newText !== text) {
+                        node.textContent = newText;
+                    }
+                }
+                sessionStorage.removeItem('pendingLanguage');
+            }
+        }
+
+        // 页面加载完成后初始化语言
+        window.addEventListener('load', initLanguage);
 
         document.getElementById('modelSelect').addEventListener('change', function() {
             // API端点自动切换逻辑
