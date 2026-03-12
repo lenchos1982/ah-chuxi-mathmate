@@ -862,11 +862,27 @@
 
         // ========== Navigation ==========
         function showPage(pageId) {
+            // 切换页面时清除引导页的固定提示条和弹窗
+            if (pageId !== 'guidance') {
+                const hintDiv = document.getElementById('stepHint');
+                if (hintDiv) hintDiv.remove();
+                const choicePopups = document.querySelectorAll('[style*="position:fixed"][style*="z-index:2000"]');
+                choicePopups.forEach(el => el.remove());
+            }
+            
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById('page-' + pageId).classList.add('active');
         }
 
         function goHome() {
+            // 清除引导页的固定提示条
+            const hintDiv = document.getElementById('stepHint');
+            if (hintDiv) hintDiv.remove();
+            
+            // 清除选择题弹窗
+            const choicePopups = document.querySelectorAll('[style*="position:fixed"][style*="z-index:2000"]');
+            choicePopups.forEach(el => el.remove());
+            
             showPage('home');
         }
 
