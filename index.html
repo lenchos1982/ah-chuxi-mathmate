@@ -846,6 +846,7 @@
             guidanceSteps: [],
             currentStep: 0,
             hintLevel: 0,
+            errorCount: 0,  // 连续错误计数
             userAnswers: [],
             sessionData: {
                 problems: [],
@@ -1192,9 +1193,11 @@
             // 调用AI分析
             analyzeWithAI(state.problemText).then(() => {
                 // 分析完成后跳转到引导页面
+                showPage('guidance');
                 generateGuidanceSteps();
             }).catch(err => {
                 console.error('分析失败:', err);
+                alert('分析失败: ' + (err.message || '请检查API设置'));
                 document.getElementById('analysisContent').innerHTML = `
                     <div class="tip" style="background: #ffebee; color: #c62828;">
                         分析失败: ${err.message || '请检查API设置'}
@@ -1204,14 +1207,11 @@
         }
 
         async function analyzeWithAI(problem) {
-            const prompt = `你是一个初中数学老师。请分析这道数学题，直接给出：
-1. 题目在讲什么（用简单的语言）
-2. 需要用到什么知识点
-3. 不用方程，用画图/数数/加减乘除的方法怎么解
+            // 精简提示词，加快响应
+            const prompt = `你是小学数学老师。分析这道题：
+1.已知数 2.关键词 3.用什么运算
 
-题目：${problem}
-
-请用温暖、耐心的语气回答，就像在鼓励小朋友一样。`;
+题目：${problem}`;
 
             try {
                 const response = await callAI(prompt);
@@ -1613,23 +1613,80 @@
             }
             
             if (isCorrect || answer.length > 0) {
+                // 答对：重置错误计数
+                state.errorCount = 0;
+                
                 // 步骤完成提示
-                let successMsg = '🎉 太棒了！我们来看下一步～';
+                let successMsg = '🎉 真棒！我们来看下一步～';
                 if (currentStep.type === 'step4_verify') {
-                    successMsg = '🎉 验证完成！你真棒！';
+                    successMsg = '🎉 太棒了！题目完成！';
                 }
                 
                 alert(successMsg);
-                speak(currentStep.type === 'step4_verify' ? '验证完成，你真棒！' : '答对了！');
+                speak(currentStep.type === 'step4_verify' ? '太棒了，题目完成！' : '答对了！');
                 
                 setTimeout(() => {
                     nextStep();
                 }, 1000);
             } else {
-                alert('不对哦，再试一次！💪');
-                speak('再想想看，给你一点点提示');
+                // 答错：增加错误计数
+                state.errorCount++;
+                
+                // 检查是否连续错3次，触发选择题
+                if (state.errorCount >= 3) {
+                    showMultipleChoice(currentStep);
+                } else {
+                    alert(`不对哦，再试一次！💪 (还剩${3 - state.errorCount}次机会)`);
+                    speak('再想想看，给你一点点提示');
+                }
             }
         }
+        
+        // 显示选择题（连续错3次时触发）
+        function showMultipleChoice(currentStep) {
+            // 生成3个选项（1个正确+2个干扰）
+            const correctAnswer = currentStep.answer || '65';
+            const num = parseInt(correctAnswer) || 0;
+            const options = [
+                { text: String(num), correct: true },
+                { text: String(num + Math.floor(Math.random() * 20) + 5), correct: false },
+                { text: String(Math.max(0, num - Math.floor(Math.random() * 15) - 3)), correct: false }
+            ];
+            // 打乱选项顺序
+            options.sort(() => Math.random() - 0.5);
+            
+            const optionsHtml = options.map((opt, i) => 
+                `<button onclick="selectOption(${opt.correct})" style="display:block;width:100%;padding:12px;margin:8px 0;border:2px solid #ddd;border-radius:8px;background:#fff;font-size:16px;cursor:pointer;">${String.fromCharCode(65+i)}. ${opt.text}</button>`
+            ).join('');
+            
+            const choiceHtml = `
+                <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;">
+                    <div style="background:white;padding:24px;border-radius:16px;max-width:320px;width:90%;text-align:center;">
+                        <h3 style="margin-bottom:16px;">💡 给点提示～</h3>
+                        <p style="color:#666;margin-bottom:16px;">${currentStep.question}</p>
+                        <div>${optionsHtml}</div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', choiceHtml);
+        }
+        
+        // 选择题选项回调
+        window.selectOption = function(isCorrect) {
+            // 移除弹窗
+            document.body.lastElementChild.remove();
+            state.errorCount = 0;  // 重置计数
+            
+            if (isCorrect) {
+                alert('🎉 答对了！继续加油～');
+                speak('答对了！');
+                setTimeout(() => nextStep(), 1000);
+            } else {
+                alert('再想想哦～');
+                speak('再想想看');
+            }
+        };
 
         function checkAnswer(userAnswer, correctAnswer) {
             // 清理答案，去掉空格和特殊字符
