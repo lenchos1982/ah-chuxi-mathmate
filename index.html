@@ -9,16 +9,17 @@
     <meta name="theme-color" content="#6C5CE7">
     <style>
         :root {
-            --primary: #6C5CE7;
-            --primary-light: #A29BFE;
-            --secondary: #FDCB6E;
-            --success: #00B894;
-            --error: #E17055;
+            /* 糖果色系 Sweet/Candy */
+            --primary: #FF6B9D;      /* 糖果粉 */
+            --primary-light: #FFC3D9; /* 浅粉 */
+            --secondary: #FFE66D;     /* 糖果黄 */
+            --success: #7BED9F;       /* 薄荷绿 */
+            --error: #FF7675;         /* 珊瑚红 */
             --text: #2D3436;
             --text-light: #636E72;
-            --bg: #F8F9FA;
+            --bg: #FFF5F8;            /* 淡粉背景 */
             --white: #FFFFFF;
-            --shadow: 0 4px 20px rgba(108, 92, 231, 0.15);
+            --shadow: 0 4px 20px rgba(255, 107, 157, 0.15);
             --radius: 16px;
         }
 
@@ -567,11 +568,7 @@
                 <h2 style="margin-bottom: 12px;">欢迎来到 MathMate</h2>
                 <p style="color: var(--text-light);">小学数学AI答疑小助手</p>
                 
-                <div class="action-grid">
-                    <div class="action-btn" onclick="startCamera()">
-                        <span class="icon">📷</span>
-                        <span>拍照识题</span>
-                    </div>
+                <div class="action-grid" style="grid-template-columns: 1fr 1fr;">
                     <div class="action-btn" onclick="showManualInput()">
                         <span class="icon">✏️</span>
                         <span>手动输入</span>
@@ -618,18 +615,11 @@
                 </div>
 
                 <div class="form-group">
-                    <label>📷 百度 OCR API Key（可选）</label>
-                    <input type="text" id="baiduApiKey" placeholder="百度OCR AK">
-                </div>
-
-                <div class="form-group">
-                    <label>🔐 百度 OCR Secret Key</label>
-                    <input type="password" id="baiduSecretKey" placeholder="百度OCR SK">
-                </div>
-
-                <div class="tip info">
-                    💡 建议：注册百度智能云账号获取免费OCR额度，识别率更高<br>
-                    📝 Secret Key是账号安全凭证，和API Key配合使用
+                    <label>🌐 语种选择</label>
+                    <select id="languageSelect">
+                        <option value="zh-CN">简体中文</option>
+                        <option value="zh-TW">中文繁体</option>
+                    </select>
                 </div>
 
                 <div class="btn-row">
@@ -863,8 +853,7 @@
             apiKey: '',
             apiUrl: '',
             model: 'deepseek',
-            baiduApiKey: '',
-            baiduSecretKey: '',
+            language: 'zh-CN',  // 默认简体中文
             capturedImage: null,
             problemText: '',
             analysis: null,
@@ -916,8 +905,7 @@
             const settings = JSON.parse(localStorage.getItem('mathmate_settings') || '{}');
             state.apiKey = settings.apiKey || '';
             state.model = settings.model || 'deepseek';
-            state.baiduApiKey = settings.baiduApiKey || '';
-            state.baiduSecretKey = settings.baiduSecretKey || '';
+            state.language = settings.language || 'zh-CN';
             
             // 根据模型自动设置API端点（重要！）
             state.apiUrl = settings.apiUrl || updateApiUrlForModel(state.model);
@@ -925,10 +913,9 @@
             document.getElementById('apiKey').value = state.apiKey;
             document.getElementById('apiUrl').value = state.apiUrl;
             document.getElementById('modelSelect').value = state.model;
-            document.getElementById('baiduApiKey').value = state.baiduApiKey;
-            document.getElementById('baiduSecretKey').value = state.baiduSecretKey;
+            document.getElementById('languageSelect').value = state.language;
             
-            console.log('加载设置 - 模型:', state.model, 'URL:', state.apiUrl);
+            console.log('加载设置 - 模型:', state.model, 'URL:', state.apiUrl, '语言:', state.language);
             
             loadVoices();
         }
@@ -939,8 +926,7 @@
             
             state.apiKey = document.getElementById('apiKey').value;
             state.model = selectedModel;
-            state.baiduApiKey = document.getElementById('baiduApiKey').value;
-            state.baiduSecretKey = document.getElementById('baiduSecretKey').value;
+            state.language = document.getElementById('languageSelect').value;
             
             // 根据模型自动设置正确的URL
             state.apiUrl = updateApiUrlForModel(state.model);
@@ -949,12 +935,12 @@
                 apiKey: state.apiKey,
                 apiUrl: state.apiUrl,
                 model: state.model,
-                baiduApiKey: state.baiduApiKey,
-                baiduSecretKey: state.baiduSecretKey
+                language: state.language
             }));
             
             // 强制alert显示
-            const msg = '设置已保存！\n选择的模型: ' + selectedModelName + '\n模型ID: ' + state.model + '\nAPI URL: ' + state.apiUrl;
+            const langName = state.language === 'zh-TW' ? '中文繁体' : '简体中文';
+            const msg = '设置已保存！\n模型: ' + selectedModelName + '\n语种: ' + langName;
             console.log(msg);
             alert(msg);
         }
@@ -1565,9 +1551,6 @@
             const inputRow = document.querySelector('#chatSection .input-row');
             if (inputRow) inputRow.style.display = 'flex';
             
-            // 更新顶部提示
-            updateStepHint('🤔 AI正在分析题目...');
-            
             // 开始AI对话式引导
             await startConversationGuide();
         }
@@ -1688,14 +1671,8 @@
         }
 
         function updateStepHint(text) {
-            let hintDiv = document.getElementById('stepHint');
-            if (!hintDiv) {
-                hintDiv = document.createElement('div');
-                hintDiv.id = 'stepHint';
-                hintDiv.style.cssText = "position:fixed; top:60px; left:0; right:0; background:#4CAF50; color:white; padding:12px; text-align:center; font-size:16px; z-index:1000; box-shadow:0 2px 4px rgba(0,0,0,0.1);";
-                document.body.insertBefore(hintDiv, document.body.firstChild);
-            }
-            hintDiv.textContent = text;
+            // 弹幕条已取消，不显示任何弹幕
+            return;
         }
 
         // 旧版函数保留兼容（重定向到新系统）
@@ -1705,8 +1682,7 @@
         }
 
         function renderGuidanceSteps() {
-            // 对话式引导模式：显示对话提示，不显示固定步骤卡片
-            updateStepHint('💬 对话式引导中 - 和AI一起解答题目');
+            // 对话式引导模式：不显示弹幕条
             
             const container = document.getElementById('stepsContainer');
             // 清空步骤容器，显示对话模式提示
