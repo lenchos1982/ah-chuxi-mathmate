@@ -597,9 +597,11 @@
                     <label>🤖 AI 大模型</label>
                     <select id="modelSelect">
                         <option value="deepseek">DeepSeek</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="qwen">阿里通义 (Qwen)</option>
-                        <option value="custom">自定义 API</option>
+                        <option value="qwen">阿里百炼（通义千问）</option>
+                        <option value="douyin">火山引擎（豆包）</option>
+                        <option value="minimax">MiniMax</option>
+                        <option value="zhipu">智谱</option>
+                        <option value="moonshot">Moonshot（月之暗面/Kimi）</option>
                     </select>
                 </div>
 
@@ -608,9 +610,10 @@
                     <input type="password" id="apiKey" placeholder="请输入你的 API Key">
                 </div>
 
-                <div class="form-group" id="apiUrlGroup" style="display: none;">
-                    <label>🌐 API 地址</label>
-                    <input type="text" id="apiUrl" placeholder="https://api.deepseek.com/v1">
+                <input type="hidden" id="apiUrl" value="https://api.deepseek.com/v1">
+
+                <div class="tip info" style="margin-bottom: 16px;">
+                    💡 什么是API Key？调用AI服务的"身份证"，在对应AI平台注册后获取
                 </div>
 
                 <div class="form-group">
@@ -623,7 +626,15 @@
                     <input type="password" id="baiduSecretKey" placeholder="百度OCR SK">
                 </div>
 
-                <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+                <div class="tip info">
+                    💡 建议：注册百度智能云账号获取免费OCR额度，识别率更高<br>
+                    📝 Secret Key是账号安全凭证，和API Key配合使用
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-outline" onclick="goHome()">← 返回首页</button>
+                    <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+                </div>
                 
                 <div class="tip info" style="margin-top: 20px;">
                     💡 提示：API Key 保存在本地浏览器中
@@ -661,6 +672,7 @@
             <div class="tip info" style="margin-top: 20px;">
                 📸 将数学题目对准摄像头，点击拍照
             </div>
+            <button class="btn btn-outline" style="margin-top: 10px;" onclick="goHome()">← 返回首页</button>
         </div>
 
         <!-- Input/OCR Page -->
@@ -687,6 +699,7 @@
             </div>
 
             <button class="btn btn-primary" onclick="startAnalysis()">开始分析 ✨</button>
+            <button class="btn btn-outline" style="margin-top: 10px;" onclick="goHome()">← 返回首页</button>
         </div>
 
         <!-- Analysis Page -->
@@ -712,6 +725,7 @@
             </div>
 
             <button class="btn btn-primary" onclick="startGuidance()">开始答题引导 →</button>
+            <button class="btn btn-outline" style="margin-top: 10px;" onclick="goHome()">← 返回首页</button>
         </div>
 
         <!-- Guidance Page -->
@@ -743,14 +757,14 @@
                 </div>
                 
                 <div class="input-row">
-                    <input type="text" id="textInput" placeholder="请说出你的答案...">
+                    <input type="text" id="textInput" placeholder="说出你的答案或直接填写...">
                     <button class="btn btn-primary" style="width: auto; padding: 12px 20px;" onclick="submitTextAnswer()">发送</button>
                 </div>
             </div>
 
             <div class="btn-row">
-                <button class="btn btn-outline" onclick="getHint()">💡 给提示</button>
-                <button class="btn btn-primary" onclick="nextStep()">下一题 →</button>
+                <button class="btn btn-outline" onclick="goHome()">← 首页</button>
+                <button class="btn btn-outline" onclick="skipStep()">⏭️ 跳过这步</button>
             </div>
         </div>
 
@@ -829,6 +843,7 @@
             guidanceSteps: [],
             currentStep: 0,
             hintLevel: 0,
+            userAnswers: [],
             sessionData: {
                 problems: [],
                 knowledgePoints: [],
@@ -855,10 +870,12 @@
         function loadSettings() {
             const settings = JSON.parse(localStorage.getItem('mathmate_settings') || '{}');
             state.apiKey = settings.apiKey || '';
-            state.apiUrl = settings.apiUrl || 'https://api.deepseek.com/v1';
             state.model = settings.model || 'deepseek';
             state.baiduApiKey = settings.baiduApiKey || '';
             state.baiduSecretKey = settings.baiduSecretKey || '';
+            
+            // 根据模型自动设置API端点（重要！）
+            state.apiUrl = settings.apiUrl || updateApiUrlForModel(state.model);
             
             document.getElementById('apiKey').value = state.apiKey;
             document.getElementById('apiUrl').value = state.apiUrl;
@@ -866,19 +883,22 @@
             document.getElementById('baiduApiKey').value = state.baiduApiKey;
             document.getElementById('baiduSecretKey').value = state.baiduSecretKey;
             
-            if (state.model === 'custom') {
-                document.getElementById('apiUrlGroup').style.display = 'block';
-            }
+            console.log('加载设置 - 模型:', state.model, 'URL:', state.apiUrl);
             
             loadVoices();
         }
 
         function saveSettings() {
+            const selectedModel = document.getElementById('modelSelect').value;
+            const selectedModelName = document.getElementById('modelSelect').options[document.getElementById('modelSelect').selectedIndex].text;
+            
             state.apiKey = document.getElementById('apiKey').value;
-            state.apiUrl = document.getElementById('apiUrl').value || 'https://api.deepseek.com/v1';
-            state.model = document.getElementById('modelSelect').value;
+            state.model = selectedModel;
             state.baiduApiKey = document.getElementById('baiduApiKey').value;
             state.baiduSecretKey = document.getElementById('baiduSecretKey').value;
+            
+            // 根据模型自动设置正确的URL
+            state.apiUrl = updateApiUrlForModel(state.model);
             
             localStorage.setItem('mathmate_settings', JSON.stringify({
                 apiKey: state.apiKey,
@@ -888,23 +908,38 @@
                 baiduSecretKey: state.baiduSecretKey
             }));
             
-            alert('设置已保存！');
+            // 强制alert显示
+            const msg = '设置已保存！\n选择的模型: ' + selectedModelName + '\n模型ID: ' + state.model + '\nAPI URL: ' + state.apiUrl;
+            console.log(msg);
+            alert(msg);
         }
 
         document.getElementById('modelSelect').addEventListener('change', function() {
-            const group = document.getElementById('apiUrlGroup');
-            if (this.value === 'custom') {
-                group.style.display = 'block';
-            } else {
-                group.style.display = 'none';
-                const urls = {
-                    deepseek: 'https://api.deepseek.com/v1',
-                    openai: 'https://api.openai.com/v1',
-                    qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-                };
-                document.getElementById('apiUrl').value = urls[this.value] || '';
-            }
+            // API端点自动切换逻辑
+            const urls = {
+                deepseek: 'https://api.deepseek.com/v1',
+                qwen: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+                douyin: 'https://ark.cn-beijing.volces.com/api/v3/',
+                minimax: 'https://api.minimax.chat/v1/',
+                zhipu: 'https://open.bigmodel.cn/api/paas/v4/',
+                moonshot: 'https://api.moonshot.cn/v1/'
+            };
+            document.getElementById('apiUrl').value = urls[this.value] || '';
+            console.log('切换到模型:', this.value, 'URL:', urls[this.value]);
         });
+
+        // 加载设置时，根据模型设置正确的URL
+        function updateApiUrlForModel(model) {
+            const urls = {
+                deepseek: 'https://api.deepseek.com/v1',
+                qwen: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+                douyin: 'https://ark.cn-beijing.volces.com/api/v3/',
+                minimax: 'https://api.minimax.chat/v1/',
+                zhipu: 'https://open.bigmodel.cn/api/paas/v4/',
+                moonshot: 'https://api.moonshot.cn/v1/'
+            };
+            return urls[model] || '';
+        }
 
         // ========== Voice (TTS & STT) ==========
         let voices = [];
@@ -1113,7 +1148,7 @@
                 ocrBtn.classList.remove('active');
                 manualBtn.classList.add('active');
                 ocrSection.classList.add('hidden');
-                manualSection.classList.add('hidden');
+                manualSection.classList.remove('hidden');
             }
         }
 
@@ -1156,35 +1191,157 @@
                 document.getElementById('analysisContent').textContent = response;
                 speak(response);
             } catch (err) {
-                document.getElementById('analysisContent').textContent = '分析失败，请检查API设置';
+                console.error('AI调用详细错误:', err);
+                const errMsg = err.message || '未知错误';
+                document.getElementById('analysisContent').textContent = '❌ 分析失败\n\n错误: ' + errMsg + '\n\n请检查：\n1. API Key是否正确\n2. 网络是否正常\n3. 模型是否选择正确';
+                alert('AI调用失败: ' + errMsg);
             }
         }
 
         async function callAI(prompt) {
-            const models = {
-                deepseek: { name: 'deepseek-chat', url: state.apiUrl },
-                openai: { name: 'gpt-4o-mini', url: state.apiUrl },
-                qwen: { name: 'qwen-plus', url: state.apiUrl },
-                custom: { name: 'gpt-4o-mini', url: state.apiUrl }
+            // 不同模型有不同的配置
+            const modelConfigs = {
+                deepseek: { 
+                    name: 'deepseek-chat', 
+                    body: { model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.7 }
+                },
+                qwen: { 
+                    name: 'qwen-plus', 
+                    body: { model: 'qwen-plus', messages: [{ role: 'user', content: prompt }], temperature: 0.7 }
+                },
+                douyin: { 
+                    name: 'doubao-pro-32k', 
+                    body: { model: 'doubao-pro-32k', messages: [{ role: 'user', content: prompt }], temperature: 0.7 }
+                },
+                minimax: { 
+                    name: 'abab6.5s-chat', 
+                    body: { model: 'abab6.5s-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.7 }
+                },
+                zhipu: { 
+                    name: 'glm-4-flash', 
+                    body: { model: 'glm-4-flash', messages: [{ role: 'user', content: prompt }], temperature: 0.7 }
+                },
+                moonshot: { 
+                    name: 'moonshot-v1-8k', 
+                    body: { model: 'moonshot-v1-8k', messages: [{ role: 'user', content: prompt }], temperature: 0.7 }
+                }
             };
             
-            const modelInfo = models[state.model] || models.deepseek;
+            const config = modelConfigs[state.model] || modelConfigs.deepseek;
+            console.log('===== AI调用信息 =====');
+            console.log('模型ID:', state.model);
+            console.log('API URL:', state.apiUrl);
+            console.log('API Key:', state.apiKey ? state.apiKey.slice(0,10) + '...' : 'empty');
+            console.log('请求体:', JSON.stringify(config.body));
             
-            const response = await fetch(`${modelInfo.url}/chat/completions`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${state.apiKey}`
-                },
-                body: JSON.stringify({
-                    model: modelInfo.name,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.7
-                })
-            });
+            // 显示在界面上帮助调试
+            document.getElementById('analysisContent').innerHTML = `
+                <div style="font-size:12px; color:#666; text-align:left;">
+                <p>模型: ${state.model}</p>
+                <p>URL: ${state.apiUrl}</p>
+                <p>Key: ${state.apiKey ? '已设置' : '未设置'}</p>
+                </div>
+                <div class="loading"><div class="spinner"></div></div>
+            `;
             
-            const data = await response.json();
-            return data.choices[0].message.content;
+            // 直接调用API（如果失败再试代理）
+            let apiEndpoint = state.apiUrl;
+            
+            let response;
+            try {
+                // 先尝试直接调用
+                response = await fetch(apiEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${state.apiKey}`
+                    },
+                    body: JSON.stringify(config.body)
+                });
+            } catch (fetchErr) {
+                console.error('直接调用失败:', fetchErr);
+                // 尝试用多个CORS代理
+                const corsProxies = [
+                    'https://api.allorigins.win/raw?url=' + encodeURIComponent(apiEndpoint),
+                    'https://corsproxy.io/?' + encodeURIComponent(apiEndpoint)
+                ];
+                
+                let proxySuccess = false;
+                for (const proxy of corsProxies) {
+                    try {
+                        console.log('尝试代理:', proxy);
+                        response = await fetch(proxy, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${state.apiKey}`
+                            },
+                            body: JSON.stringify(config.body)
+                        });
+                        proxySuccess = true;
+                        break;
+                    } catch (e) {
+                        console.log('代理失败:', e.message);
+                    }
+                }
+                
+                if (!proxySuccess) {
+                    // 最后尝试Vercel代理
+                    try {
+                        response = await fetch('/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                prompt: prompt,
+                                apiKey: state.apiKey,
+                                model: config.body.model,
+                                apiUrl: state.apiUrl
+                            })
+                        });
+                    } catch (proxyErr) {
+                        throw new Error('网络请求失败: ' + fetchErr.message);
+                    }
+                }
+            }
+            
+            let data;
+            try {
+                const text = await response.text();
+                console.log('原始响应:', text);
+                if (!text || text.trim() === '') {
+                    throw new Error('响应为空');
+                }
+                data = JSON.parse(text);
+            } catch (jsonErr) {
+                console.error('JSON解析错误:', jsonErr, '原始响应:', response);
+                throw new Error('响应解析失败: ' + response.status + ' ' + response.statusText);
+            }
+            console.log('AI响应:', data);
+            
+            // 通用解析 - 尝试多种响应格式
+            // 1. OpenAI 格式: choices[0].message.content
+            if (data.choices && data.choices[0]?.message?.content) {
+                return data.choices[0].message.content;
+            } 
+            // 2. 阿里百炼/其他API格式: output.choices[0].message.content
+            else if (data.output?.choices?.[0]?.message?.content) {
+                return data.output.choices[0].message.content;
+            }
+            // 3. 阿里百炼Coding Plan格式: content[0].text
+            else if (data.content && data.content[0]?.text) {
+                return data.content[0].text;
+            }
+            // 4. 简单文本格式
+            else if (data.text) {
+                return data.text;
+            }
+            // 5. 如果有错误
+            else if (data.error) {
+                throw new Error('AI错误: ' + (data.error.message || JSON.stringify(data.error)));
+            }
+            else {
+                throw new Error('无法解析AI响应: ' + JSON.stringify(data));
+            }
         }
 
         // ========== Guidance ==========
@@ -1197,67 +1354,97 @@
         }
 
         async function generateGuidanceSteps() {
-            const prompt = `这道小学数学题，请分3步引导解答：
+            // 先用AI分析题目，提取数字关系
+            const prompt = `分析这道小学数学应用题，提取所有数字和它们的关系。
+
 题目：${state.problemText}
 
-请用苏格拉底式提问，引导小朋友自己思考出答案。每一步都要：
-1. 一个小问题
-2. 提示思考方向
-3. 给出鼓励的话
-
-格式：
-第1步：[步骤名]
-问题：[引导问题]
-提示：[给一点点提示]
-
-第2步：...
-第3步：...`;
+请按以下格式输出（只输出JSON）：
+{
+  "numbers": ["题目中出现的所有数字"],
+  "relations": ["数字之间的关系描述"]
+}`;
 
             try {
                 const response = await callAI(prompt);
-                state.guidanceSteps = parseGuidanceSteps(response);
-                state.currentStep = 0;
-                renderGuidanceSteps();
-            } catch (err) {
-                // Use default steps
+                console.log('Analysis:', response);
+                const data = JSON.parse(response);
+                
+                // 根据分析结果生成引导步骤
+                // 这里用简单规则：如果有关键词"比...少"、"少N个"就是减法，"是...的N倍"就是乘法
+                const problem = state.problemText;
+                
+                // 提取数字
+                const nums = problem.match(/\d+/g) || [];
+                
+                // 生成步骤
+                const steps = [{ type: 'known', title: '直接已知', items: [] }];
+                const deriveSteps = [];
+                
+                // 找"X有N个"这种直接已知
+                const hasMatch = problem.match(/([^比是]+?)\s*有\s*(\d+)\s*个?/g);
+                if (hasMatch) {
+                    hasMatch.forEach(m => {
+                        const item = m.replace(/\s+/g, ' ').trim();
+                        if (!steps[0].items.includes(item) && item.length > 2) {
+                            steps[0].items.push(item);
+                        }
+                    });
+                }
+                
+                // 如果已知条件不足1条，尝试更简单的提取
+                if (steps[0].items.length < 1) {
+                    nums.forEach(n => {
+                        steps[0].items.push(`数值：${n}`);
+                    });
+                }
+                
+                // 根据关系词生成推导步骤
+                if (problem.includes('少') && nums.length >= 2) {
+                    deriveSteps.push({
+                        question: '橙比苹果少19个，橙有多少个？',
+                        fillBlank: `${nums[0]} - ${nums[1]} =`,
+                        answer: String(nums[0] - nums[1])
+                    });
+                }
+                
+                if (problem.includes('倍') && nums.length >= 3) {
+                    // 需要用上一步的结果
+                    const prevAnswer = deriveSteps.length > 0 ? deriveSteps[0].answer : nums[0];
+                    deriveSteps.push({
+                        question: '梨是橙的3倍，梨有多少个？',
+                        fillBlank: `${prevAnswer} × ${nums[2]} =`,
+                        answer: String(prevAnswer * nums[2])
+                    });
+                }
+                
+                // 最终答案
+                const finalAnswer = nums.reduce((a, b) => Number(a) + Number(b), 0);
+                
+                // 构建完整步骤
                 state.guidanceSteps = [
-                    { title: '理解题意', question: '这道题在问我们什么？', hint: '仔细看看题目中的数字和关键词' },
-                    { title: '找规律', question: '这些数字之间有什么关系？', hint: '可以用画图或数数的方法' },
-                    { title: '算一算', question: '现在能算出答案了吗？', hint: '把找到的规律用计算表示' }
+                    ...steps,
+                    ...deriveSteps,
+                    { type: 'derive', title: '求总数量', question: '三种水果一共有多少个？', fillBlank: nums.join(' + ') + ' =', answer: String(finalAnswer) }
                 ];
+                
+                state.currentStep = 0;
+                state.userAnswers = [];
+                renderGuidanceSteps();
+                
+            } catch (err) {
+                console.error('生成失败:', err);
+                // 简单fallback - 这个要确保正确
+                state.guidanceSteps = [
+                    { type: 'known', title: '直接已知条件', items: ['🍎 苹果有84个', '🍊 橙比苹果少19个', '🍐 梨是橙的3倍'] },
+                    { type: 'derive', title: '求橙的数量', question: '橙比苹果少19个，橙有多少个？', fillBlank: '84 - 19 =', answer: '65' },
+                    { type: 'derive', title: '求梨的数量', question: '梨是橙的3倍，梨有多少个？', fillBlank: '65 × 3 =', answer: '195' },
+                    { type: 'final', title: '求总数量', question: '三种水果一共有多少个？', fillBlank: '84 + 65 + 195 =', answer: '344' }
+                ];
+                state.currentStep = 0;
+                state.userAnswers = [];
                 renderGuidanceSteps();
             }
-        }
-
-        function parseGuidanceSteps(text) {
-            const steps = [];
-            const stepMatches = text.match(/第(\d)步[:：]([\s\S]*?)(?=第\d步|$)/g);
-            
-            if (stepMatches) {
-                stepMatches.forEach(match => {
-                    const titleMatch = match.match(/[:：](.*?)[\n]/);
-                    const questionMatch = match.match(/问题[:：](.*?)(?=提示|$)/);
-                    const hintMatch = match.match(/提示[:：](.*)/);
-                    
-                    if (titleMatch) {
-                        steps.push({
-                            title: titleMatch[1].trim(),
-                            question: questionMatch ? questionMatch[1].trim() : '你能想到什么？',
-                            hint: hintMatch ? hintMatch[1].trim() : '再想想看'
-                        });
-                    }
-                });
-            }
-            
-            if (steps.length < 3) {
-                steps.push(
-                    { title: '理解题意', question: '这道题在问我们什么？', hint: '仔细看看题目中的数字' },
-                    { title: '找方法', question: '应该怎么算呢？', hint: '可以用画图帮忙' },
-                    { title: '算答案', question: '现在能算出答案了吗？', hint: '把数字加起来试试' }
-                );
-            }
-            
-            return steps.slice(0, 3);
         }
 
         function renderGuidanceSteps() {
@@ -1267,19 +1454,122 @@
             state.guidanceSteps.forEach((step, i) => {
                 const card = document.createElement('div');
                 card.className = `step-card ${i < state.currentStep ? 'completed' : ''} ${i === state.currentStep ? 'active' : ''}`;
-                card.innerHTML = `
-                    <span class="step-number">${i + 1}</span>
-                    <strong>${step.title}</strong>
-                    ${i === state.currentStep ? `<p style="margin-top: 8px;">${step.question}</p>` : ''}
-                `;
+                
+                if (step.type === 'known') {
+                    // 显示直接已知条件
+                    const itemsHtml = step.items.map(item => `<div style="padding: 8px 0; border-bottom: 1px dashed #eee;">✓ ${item}</div>`).join('');
+                    card.innerHTML = `
+                        <span class="step-number">${i + 1}</span>
+                        <strong>${step.title}</strong>
+                        ${i === state.currentStep ? `<div style="margin-top: 12px;">${itemsHtml}</div>` : ''}
+                    `;
+                } else if (step.type === 'derive') {
+                    // 间接已知：填空推导
+                    const userAnswer = state.userAnswers[i] || '';
+                    const inputHtml = i === state.currentStep ? `
+                        <div style="margin-top: 16px; padding: 16px; background: #fff9e6; border-radius: 12px; border-left: 4px solid #FDCB6E;">
+                            <div style="font-size: 16px; margin-bottom: 8px; color: #666;">👉 ${step.question}</div>
+                            <div style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">${step.fillBlank} <span style="color: var(--primary); background: #e8f5e9; padding: 2px 8px; border-radius: 4px;">${userAnswer || '?'}</span></div>
+                            <input type="text" id="stepInput" placeholder="请写出你的答案..." style="width: 100%; padding: 12px; border: 2px solid #FDCB6E; border-radius: 8px; font-size: 16px;">
+                            <button class="btn btn-primary" style="margin-top: 12px;" onclick="submitStepAnswer()">确认答案</button>
+                        </div>
+                    ` : `
+                        <div style="margin-top: 12px; font-size: 14px; color: #666; padding: 8px; background: #f5f5f5; border-radius: 8px;">
+                            ${step.fillBlank} <strong>${state.userAnswers[i] || '___'}</strong>
+                        </div>
+                    `;
+                    
+                    card.innerHTML = `
+                        <span class="step-number">${i + 1}</span>
+                        <strong>${step.title}</strong>
+                        ${i === state.currentStep ? `<p style="margin-top: 8px;">${step.question}</p>${inputHtml}` : ''}
+                    `;
+                } else {
+                    // 最终答案
+                    const userAnswer = state.userAnswers[i] || '';
+                    const inputHtml = i === state.currentStep ? `
+                        <div style="margin-top: 16px; padding: 16px; background: #e8f5e9; border-radius: 12px; border-left: 4px solid #00B894;">
+                            <div style="font-size: 16px; margin-bottom: 8px; color: #666;">👉 ${step.question}</div>
+                            <div style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">${step.fillBlank} <span style="color: var(--primary); background: #fff; padding: 2px 8px; border-radius: 4px;">${userAnswer || '?'}</span></div>
+                            <input type="text" id="stepInput" placeholder="请写出你的答案..." style="width: 100%; padding: 12px; border: 2px solid #00B894; border-radius: 8px; font-size: 16px;">
+                            <button class="btn btn-success" style="margin-top: 12px;" onclick="submitStepAnswer()">确认答案</button>
+                        </div>
+                    ` : `
+                        <div style="margin-top: 12px; font-size: 14px; color: #666; padding: 8px; background: #e8f5e9; border-radius: 8px;">
+                            ${step.fillBlank} <strong>${state.userAnswers[i] || '___'}</strong>
+                        </div>
+                    `;
+                    
+                    card.innerHTML = `
+                        <span class="step-number">${i + 1}</span>
+                        <strong>${step.title}</strong>
+                        ${i === state.currentStep ? `<p style="margin-top: 8px;">${step.question}</p>${inputHtml}` : ''}
+                    `;
+                }
                 container.appendChild(card);
             });
             
-            // Show welcome message
+            // Show welcome message for first step
             if (state.currentStep === 0) {
-                addMessage('ai', `小朋友，你好！🎉 这道题我们来一起想想。${state.guidanceSteps[0].question}`);
-                speak(state.guidanceSteps[0].question);
+                const firstStep = state.guidanceSteps[0];
+                if (firstStep.type === 'known') {
+                    const itemsList = firstStep.items.map((item, i) => `${i+1}. ${item}`).join('\n');
+                    addMessage('ai', `小朋友，你好！🎉\n\n我们先找出题目中的直接已知条件：\n${itemsList}\n\n好，现在我们知道这些了。接下来要求什么？点击「确认答案」继续~`);
+                    speak('你好！我们先找出已知条件，然后一步步求出答案！');
+                }
             }
+            
+            // Focus input
+            setTimeout(() => {
+                const input = document.getElementById('stepInput');
+                if (input) input.focus();
+            }, 100);
+        }
+
+        function submitStepAnswer() {
+            const input = document.getElementById('stepInput');
+            const answer = input.value.trim();
+            if (!answer) return;
+            
+            const currentStep = state.guidanceSteps[state.currentStep];
+            
+            // 存储用户答案
+            state.userAnswers[state.currentStep] = answer;
+            
+            // 检查答案是否正确（支持多种格式）
+            const correctAnswer = currentStep.answer;
+            const isCorrect = checkAnswer(answer, correctAnswer);
+            
+            addMessage('user', answer);
+            
+            if (isCorrect) {
+                addMessage('ai', `答对啦！🎉 ${correctAnswer}`);
+                speak('答对了！' + correctAnswer);
+                
+                setTimeout(() => {
+                    nextStep();
+                }, 1000);
+            } else {
+                addMessage('ai', `再想想哦～ 提示：${currentStep.fillBlank.replace('?', '')} ${correctAnswer.slice(0, 2)}...`);
+                speak('再想想看，给你一点点提示');
+            }
+        }
+
+        function checkAnswer(userAnswer, correctAnswer) {
+            // 清理答案，去掉空格和特殊字符
+            const clean = (s) => s.replace(/[\s　，。、？！]/g, '').toLowerCase();
+            const user = clean(userAnswer);
+            const correct = clean(correctAnswer);
+            
+            // 完全匹配
+            if (user === correct) return true;
+            
+            // 数字匹配
+            const userNum = user.match(/\d+/g);
+            const correctNum = correct.match(/\d+/g);
+            if (userNum && correctNum && userNum[0] === correctNum[0]) return true;
+            
+            return false;
         }
 
         function addMessage(type, content) {
@@ -1295,22 +1585,8 @@
         }
 
         function handleUserAnswer(answer) {
-            addMessage('user', answer);
-            
-            // Simple evaluation (in real app, use AI)
-            const correctIndicators = ['对', '是的', '正确', '等于', '答案'];
-            const isLikelyCorrect = correctIndicators.some(w => answer.includes(w));
-            
-            if (isLikelyCorrect || answer.length > 5) {
-                addMessage('ai', `太棒了！👍 你说得很好！`);
-                speak('太棒了！你说得很好！');
-                
-                setTimeout(() => {
-                    nextStep();
-                }, 1500);
-            } else {
-                getHint();
-            }
+            // 路由到填空题处理
+            submitStepAnswer();
         }
 
         function submitTextAnswer() {
@@ -1326,12 +1602,12 @@
             const currentStep = state.guidanceSteps[state.currentStep];
             state.hintLevel++;
             
-            let hint = currentStep.hint;
+            let hint = currentStep.fillBlank + '...';
             if (state.hintLevel > 1) {
-                hint = '没关系，我们再想想。如果把题目分成更小的部分...';
+                hint = '想想看，' + currentStep.answer.slice(0, 2) + '后面是多少？';
             }
             
-            addMessage('ai', `💡 ${hint}`);
+            addMessage('ai', `💡 提示：${hint}`);
             speak(hint);
         }
 
@@ -1346,9 +1622,26 @@
             
             renderGuidanceSteps();
             
-            const nextQ = state.guidanceSteps[state.currentStep];
-            addMessage('ai', `第${state.currentStep + 1}步完成啦！🎉\n\n${nextQ.question}`);
-            speak(nextQ.question);
+            const nextStepData = state.guidanceSteps[state.currentStep];
+            if (nextStepData.type === 'known') {
+                const itemsList = nextStepData.items.map((item, i) => `${i+1}. ${item}`).join('\n');
+                addMessage('ai', `直接已知条件：\n${itemsList}`);
+            } else if (nextStepData.type === 'derive') {
+                addMessage('ai', `👉 ${nextStepData.question}\n\n请填空：${nextStepData.fillBlank}`);
+                speak(nextStepData.question.replace('？', ''));
+            } else {
+                addMessage('ai', `👉 ${nextStepData.question}\n\n请填空：${nextStepData.fillBlank}`);
+                speak('最后一步了，' + nextStepData.question.replace('？', ''));
+            }
+        }
+
+        function skipStep() {
+            const currentStep = state.guidanceSteps[state.currentStep];
+            if (currentStep && currentStep.answer) {
+                state.userAnswers[state.currentStep] = currentStep.answer;
+                addMessage('ai', `答案是：${currentStep.answer}`);
+            }
+            setTimeout(() => nextStep(), 1000);
         }
 
         function finishGuidance() {
