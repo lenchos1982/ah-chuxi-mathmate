@@ -834,11 +834,29 @@
     </div>
 
     <script>
-        // ========== System Prompt (固定常量) ==========
-        const SYSTEM_PROMPT = `你是小学数学老师，善于引导孩子思考。
-原则：不直接给答案，通过提问引导孩子。
-孩子说对了大力鼓励给下一步提示；说错了温和提示"想想已知什么？要求什么？"
-回答简短适合小学生，不超过50字。输出JSON：{"message":"回复","isComplete":true/false}`;
+        // ========== Prompt 常量 ==========
+        // 阶段1：分析题目
+        const ANALYSIS_PROMPT = `你是小学数学老师。分析这道题：
+- 提取已知数
+- 提取关键词（如"比...多"、"合计"）
+- 问什么问题
+只列出要点，禁止给出计算方法或答案。`;
+
+        // 阶段2：引导对话
+        const GUIDANCE_PROMPT = `你是小学数学老师，用苏格拉底方法引导孩子思考。
+
+规则：
+1. 不直接给答案，只给提示
+2. 孩子回答对了 → "太棒了！你能告诉我是怎么想的吗？想想下一步该做什么？"
+3. 孩子回答接近了 → "很接近了！再想想还缺什么？"
+4. 孩子回答错了 → "再想想哦，已知什么？要求什么？"
+5. 孩子不会 → "看看题目里的关键词'XX'，是什么意思？"
+
+要求：
+- 每次只给一个小提示
+- 语气亲切鼓励
+- 适合小学生
+- 不超过30字`;
 
         // ========== Global State ==========
         const state = {
@@ -1273,18 +1291,20 @@
         }
 
         // callAI支持两种调用方式：
-        // 1. callAI(prompt) - 简单模式，直接用user角色
-        // 2. callAI(messages) - 完整模式，messages数组
-        async function callAI(promptOrMessages) {
+        // 1. callAI(prompt) - 简单模式，自动添加默认system prompt
+        // 2. callAI(prompt, systemPrompt) - 指定system prompt
+        // 3. callAI(messages) - 完整模式，messages数组
+        async function callAI(promptOrMessages, systemPrompt) {
             // 判断输入类型
             let messages;
             if (Array.isArray(promptOrMessages)) {
                 // 完整messages格式
                 messages = promptOrMessages;
             } else {
-                // 简单prompt格式，自动添加system prompt
+                // 使用传入的system prompt或默认的GUIDANCE_PROMPT
+                const sysPrompt = systemPrompt || GUIDANCE_PROMPT;
                 messages = [
-                    { role: 'system', content: SYSTEM_PROMPT },
+                    { role: 'system', content: sysPrompt },
                     { role: 'user', content: promptOrMessages }
                 ];
             }
@@ -1530,12 +1550,9 @@
         }
 
         async function startConversationGuide() {
-            // 用AI分析题目（只需要基本信息，不需要答案）
-            const analysisPrompt = `分析小学数学题，只输出JSON：
-{"numbers":["数字"],"keywords":["关键词"],"question":"问题","operation":"运算"}`;
-
+            // 用AI分析题目，使用ANALYSIS_PROMPT
             try {
-                const response = await callAI(analysisPrompt + '\n\n题目：' + state.problemText);
+                const response = await callAI('题目：' + state.problemText, ANALYSIS_PROMPT);
                 console.log('题目分析:', response);
                 problemAnalysis = JSON.parse(response);
                 
@@ -1597,33 +1614,8 @@
             }
         }
 
-        // ========== System Prompt (精简版) ==========
-        // 每次AI调用都带上这个system prompt
-        const SYSTEM_PROMPT = `你是小学数学老师，善于引导孩子思考。
-原则：
-- 不直接给答案
-- 通过提问引导孩子
-- 说对了大力鼓励，给下一个提示
-- 说错了/不会 → 温和提示"想想已知什么？要求什么？"
-- 回答简短，适合小学生，不超过50字
-
-输出JSON格式：
-{"message":"回复内容","isComplete":true或false}`;
-
-        // 构建带system prompt的完整消息
-        function buildMessages(userContent) {
-            return [
-                { role: 'system', content: SYSTEM_PROMPT },
-                ...conversationHistory.slice(-6).map(m => ({
-                    role: m.role === 'user' ? 'user' : 'assistant',
-                    content: m.content
-                })),
-                { role: 'user', content: userContent }
-            ];
-        }
-
         async function getSmartResponse(userInput) {
-            // 构建完整的messages数组，包含system prompt
+            // 构建完整的messages数组，使用GUIDANCE_PROMPT
             const userContent = `题目：${state.problemText}
 已知：${problemAnalysis?.numbers?.join('、') || '?'}
 关键词：${problemAnalysis?.keywords?.join('、') || '?'}
@@ -1631,12 +1623,10 @@
 
 对话历史：${conversationHistory.slice(-3).map(m => `${m.role==='user'?'孩子':'老师'}:${m.content}`).join('；')}
 
-孩子说：${userInput}
-
-判断孩子是否说对，说对了给下一步提示，说错了温和引导。`;
+孩子说：${userInput}`;
 
             const messages = [
-                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'system', content: GUIDANCE_PROMPT },
                 ...conversationHistory.slice(-6).map(m => ({
                     role: m.role === 'user' ? 'user' : 'assistant',
                     content: m.content
