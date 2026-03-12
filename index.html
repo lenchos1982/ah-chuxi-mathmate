@@ -9,17 +9,17 @@
     <meta name="theme-color" content="#6C5CE7">
     <style>
         :root {
-            /* 糖果色系 Sweet/Candy */
-            --primary: #FF6B9D;      /* 糖果粉 */
-            --primary-light: #FFC3D9; /* 浅粉 */
-            --secondary: #FFE66D;     /* 糖果黄 */
+            /* 糖果蓝色系 Sweet Blue */
+            --primary: #5DADE2;      /* 糖果蓝 */
+            --primary-light: #AED6F1; /* 浅蓝 */
+            --secondary: #F7DC6F;     /* 糖果黄 */
             --success: #7BED9F;       /* 薄荷绿 */
             --error: #FF7675;         /* 珊瑚红 */
-            --text: #2D3436;
-            --text-light: #636E72;
-            --bg: #FFF5F8;            /* 淡粉背景 */
+            --text: #2C3E50;
+            --text-light: #7F8C8D;
+            --bg: #F0F8FF;            /* 淡蓝背景 */
             --white: #FFFFFF;
-            --shadow: 0 4px 20px rgba(255, 107, 157, 0.15);
+            --shadow: 0 4px 20px rgba(93, 173, 226, 0.15);
             --radius: 16px;
         }
 
@@ -835,17 +835,21 @@
         // 阶段2：引导对话
         const GUIDANCE_PROMPT = `你是小学数学老师，用苏格拉底方法引导孩子思考。
 
+核心原则：
+- 不直接给答案，只给提示
+- 孩子回答错了不要让他重来，继续给提示引导他想到正确答案
+- 一步步引导，直到孩子说出正确答案
+
 规则：
-1. 不直接给答案，只给提示
-2. 孩子回答对了 → "太棒了！你能告诉我是怎么想的吗？想想下一步该做什么？"
-3. 孩子回答接近了 → "很接近了！再想想还缺什么？"
-4. 孩子回答错了 → "再想想哦，已知什么？要求什么？"
-5. 孩子不会 → "看看题目里的关键词'XX'，是什么意思？"
+1. 孩子回答对了 → 表扬并问"想想下一步？"
+2. 孩子回答接近了 → 给小提示帮助想到正确答案
+3. 孩子回答错了 → 温和提示"再想想哦，提示：..."
+4. 孩子不会 → 分解问题，给更小的提示
 
 要求：
+- 不要说"重新来"或"从头开始"
 - 每次只给一个小提示
-- 语气亲切鼓励
-- 适合小学生
+- 语气亲切鼓励，适合小学生
 - 不超过30字`;
 
         // ========== Global State ==========
@@ -1917,7 +1921,22 @@
             return false;
         }
 
+        // 简繁转换函数
+        function toTraditionalChinese(text) {
+            const trans = translations['zh-TW'] || {};
+            let result = text;
+            for (const [cn, tw] of Object.entries(trans)) {
+                result = result.replace(new RegExp(cn, 'g'), tw);
+            }
+            return result;
+        }
+
         function addMessage(type, content) {
+            // 如果是AI消息且当前语言是繁体，转换内容
+            if (type === 'ai' && state.language === 'zh-TW') {
+                content = toTraditionalChinese(content);
+            }
+            
             const messages = document.getElementById('messages');
             const div = document.createElement('div');
             div.className = `message ${type}`;
