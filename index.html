@@ -1396,78 +1396,70 @@
         }
 
         async function generateGuidanceSteps() {
-            // 先用AI分析题目，提取数字关系
-            const prompt = `分析这道小学数学应用题，提取所有数字和它们的关系。
+            // 使用昨天确定的4步标准引导流程
+            // 第1步：审题 -> 第2步：建模 -> 第3步：分步计算 -> 第4步：验证
+            
+            // 先用AI分析题目，提取关键信息
+            const prompt = `你是一个小学数学老师。请分析这道数学题，提取关键信息。
 
 题目：${state.problemText}
 
-请按以下格式输出（只输出JSON）：
+请按以下格式输出（只输出JSON，不要其他内容）：
 {
   "numbers": ["题目中出现的所有数字"],
-  "relations": ["数字之间的关系描述"]
+  "keywords": ["题目中的关键词，如"比...少"、"是...的倍"、"合计"、"还剩"等"],
+  "question": "题目最后问什么问题",
+  "operation": "这道题应该用什么运算（加法/减法/乘法/除法）"
 }`;
 
             try {
                 const response = await callAI(prompt);
-                console.log('Analysis:', response);
+                console.log('题目分析:', response);
                 const data = JSON.parse(response);
                 
-                // 根据分析结果生成引导步骤
-                // 这里用简单规则：如果有关键词"比...少"、"少N个"就是减法，"是...的N倍"就是乘法
-                const problem = state.problemText;
+                // 构建4步引导流程
+                const numbers = data.numbers || [];
+                const keywords = data.keywords || [];
+                const question = data.question || '这道题在问什么？';
                 
-                // 提取数字
-                const nums = problem.match(/\d+/g) || [];
-                
-                // 生成步骤
-                const steps = [{ type: 'known', title: '直接已知', items: [] }];
-                const deriveSteps = [];
-                
-                // 找"X有N个"这种直接已知
-                const hasMatch = problem.match(/([^比是]+?)\s*有\s*(\d+)\s*个?/g);
-                if (hasMatch) {
-                    hasMatch.forEach(m => {
-                        const item = m.replace(/\s+/g, ' ').trim();
-                        if (!steps[0].items.includes(item) && item.length > 2) {
-                            steps[0].items.push(item);
-                        }
-                    });
-                }
-                
-                // 如果已知条件不足1条，尝试更简单的提取
-                if (steps[0].items.length < 1) {
-                    nums.forEach(n => {
-                        steps[0].items.push(`数值：${n}`);
-                    });
-                }
-                
-                // 根据关系词生成推导步骤
-                if (problem.includes('少') && nums.length >= 2) {
-                    deriveSteps.push({
-                        question: '橙比苹果少19个，橙有多少个？',
-                        fillBlank: `${nums[0]} - ${nums[1]} =`,
-                        answer: String(nums[0] - nums[1])
-                    });
-                }
-                
-                if (problem.includes('倍') && nums.length >= 3) {
-                    // 需要用上一步的结果
-                    const prevAnswer = deriveSteps.length > 0 ? deriveSteps[0].answer : nums[0];
-                    deriveSteps.push({
-                        question: '梨是橙的3倍，梨有多少个？',
-                        fillBlank: `${prevAnswer} × ${nums[2]} =`,
-                        answer: String(prevAnswer * nums[2])
-                    });
-                }
-                
-                // 最终答案
-                const finalAnswer = nums.reduce((a, b) => Number(a) + Number(b), 0);
-                
-                // 构建完整步骤
+                // 生成4步标准引导
                 state.guidanceSteps = [
-                    ...steps,
-                    ...deriveSteps,
-                    { type: 'derive', title: '求总数量', question: '三种水果一共有多少个？', fillBlank: nums.join(' + ') + ' =', answer: String(finalAnswer) }
+                    // 第1步：审题
+                    { 
+                        type: 'step1_review', 
+                        title: '第1步-审题', 
+                        question: '请仔细读题，然后告诉我：题目已知哪些数？要求什么？有没有关键词？',
+                        hint: '找找题目中的数字和"比...少"、"是...倍"这类关键词',
+                        fillBlank: '我看到题目中有的数字是：___，关键词是：___，要求的问题是：___',
+                        answer: '' 
+                    },
+                    // 第2步：建模（数量关系）
+                    { 
+                        type: 'step2_model', 
+                        title: '第2步-建模', 
+                        question: '根据关键词，这道题是什么数量关系？（比什么少→减法，比什么多→加法，几倍→乘法，几分之几→除法，合计→加法，还剩→减法）',
+                        hint: keywords.length > 0 ? `题目中的关键词有：${keywords.join('、')}` : '想想看用什么运算？',
+                        fillBlank: '我分析是___运算，因为___',
+                        answer: data.operation || ''
+                    },
+                    // 第3步：分步计算
+                    { 
+                        type: 'step3_calculate', 
+                        title: '第3步-分步计算', 
+                        question: '根据已知条件，第一步可以算出什么？然后算什么？接下来呢？一步步来',
+                        hint: numbers.length > 0 ? `可以先用数字${numbers[0]}和${numbers[1] || numbers[0]}开始计算` : '一步步推导',
+                        fillBlank: '第一步：___ = ___\n第二步：___ = ___\n第三步：___ = ___',
+                        answer: '' 
+                    },
+                    // 第4步：验证
+                    { 
+                        type: 'step4_verify', 
+                        title: '第4步-验证', 
+                        question: '把你算出的答案代入题目检查，对不对？',
+                        hint: '把答案代回去算一算，看看是否符合题目条件',
+                        fillBlank: '代入验证：___ 正确吗？（对/错）',
+                        answer: '对'
+                    }
                 ];
                 
                 state.currentStep = 0;
@@ -1476,12 +1468,40 @@
                 
             } catch (err) {
                 console.error('生成失败:', err);
-                // 简单fallback - 这个要确保正确
+                // Fallback：使用标准4步但简化
                 state.guidanceSteps = [
-                    { type: 'known', title: '直接已知条件', items: ['🍎 苹果有84个', '🍊 橙比苹果少19个', '🍐 梨是橙的3倍'] },
-                    { type: 'derive', title: '求橙的数量', question: '橙比苹果少19个，橙有多少个？', fillBlank: '84 - 19 =', answer: '65' },
-                    { type: 'derive', title: '求梨的数量', question: '梨是橙的3倍，梨有多少个？', fillBlank: '65 × 3 =', answer: '195' },
-                    { type: 'final', title: '求总数量', question: '三种水果一共有多少个？', fillBlank: '84 + 65 + 195 =', answer: '344' }
+                    { 
+                        type: 'step1_review', 
+                        title: '第1步-审题', 
+                        question: '题目已知哪些数？要求什么？有没有关键词？', 
+                        hint: '找找题目中的数字',
+                        fillBlank: '已知数：___ 要求：___ 关键词：___',
+                        answer: '' 
+                    },
+                    { 
+                        type: 'step2_model', 
+                        title: '第2步-建模', 
+                        question: '比什么少→减法，比什么多→加法，几倍→乘法，几分之几→除法，合计→加法', 
+                        hint: '判断数量关系',
+                        fillBlank: '我分析是___运算',
+                        answer: '' 
+                    },
+                    { 
+                        type: 'step3_calculate', 
+                        title: '第3步-分步计算', 
+                        question: '第一步可以算出什么？然后算什么？接下来呢？', 
+                        hint: '一步步来',
+                        fillBlank: '第一步：___\n第二步：___\n第三步：___',
+                        answer: '' 
+                    },
+                    { 
+                        type: 'step4_verify', 
+                        title: '第4步-验证', 
+                        question: '代入题目检查，对不对？', 
+                        hint: '代回去算一算',
+                        fillBlank: '验证结果：对/错',
+                        answer: '对' 
+                    }
                 ];
                 state.currentStep = 0;
                 state.userAnswers = [];
@@ -1490,12 +1510,15 @@
         }
 
         function renderGuidanceSteps() {
-            // 显示顶部提示
+            // 显示顶部提示 - 根据步骤类型显示不同提示
             const step = state.guidanceSteps[state.currentStep];
             let hintText = "请在下方输入答案";
-            if (step && step.type === 'known') hintText = "以上是题目已知条件，请看下方第一个问题";
-            else if (step && step.type === 'derive') hintText = "请回答下方的填空题";
-            else if (step && step.type === 'final') hintText = "这是最后一步，求总数量！";
+            if (step) {
+                if (step.type === 'step1_review') hintText = "第1步-审题：请找出题目中的已知数和关键词";
+                else if (step.type === 'step2_model') hintText = "第2步-建模：判断数量关系（比...少→减法，比...多→加法，几倍→乘法）";
+                else if (step.type === 'step3_calculate') hintText = "第3步-分步计算：一步步来，先算第一步";
+                else if (step.type === 'step4_verify') hintText = "第4步-验证：把答案代回去检查";
+            }
             
             // 添加或更新顶部提示
             let hintDiv = document.getElementById('stepHint');
@@ -1513,55 +1536,42 @@
                 const card = document.createElement('div');
                 card.className = `step-card ${i < state.currentStep ? 'completed' : ''} ${i === state.currentStep ? 'active' : ''}`;
                 
-                if (step.type === 'known') {
-                    // 显示直接已知条件
-                    const itemsHtml = step.items.map(item => `<div style="padding: 8px 0; border-bottom: 1px dashed #eee;">✓ ${item}</div>`).join('');
-                    card.innerHTML = `
-                        <span class="step-number">${i + 1}</span>
-                        <strong>${step.title}</strong>
-                        ${i === state.currentStep ? `<div style="margin-top: 12px;">${itemsHtml}</div>` : ''}
-                    `;
-                } else if (step.type === 'derive') {
-                    // 间接已知：填空推导
-                    const userAnswer = state.userAnswers[i] || '';
-                    const inputHtml = i === state.currentStep ? `
-                        <div style="margin-top: 16px; padding: 16px; background: #fff9e6; border-radius: 12px; border-left: 4px solid #FDCB6E;">
-                            <div style="font-size: 16px; margin-bottom: 8px; color: #666;">👉 ${step.question}</div>
-                            <div style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">${step.fillBlank} <span style="color: var(--primary); background: #e8f5e9; padding: 2px 8px; border-radius: 4px;">${userAnswer || '?'}</span></div>
-                            <input type="text" id="stepInput" placeholder="请写出你的答案..." style="width: 100%; padding: 12px; border: 2px solid #FDCB6E; border-radius: 8px; font-size: 16px;">
+                // 根据步骤类型使用不同颜色
+                let borderColor = '#6C5CE7';
+                if (step.type === 'step1_review') borderColor = '#3498db'; // 蓝色 - 审题
+                else if (step.type === 'step2_model') borderColor = '#9b59b6'; // 紫色 - 建模
+                else if (step.type === 'step3_calculate') borderColor = '#e67e22'; // 橙色 - 计算
+                else if (step.type === 'step4_verify') borderColor = '#27ae60'; // 绿色 - 验证
+                
+                card.style.borderLeftColor = borderColor;
+                
+                const userAnswer = state.userAnswers[i] || '';
+                
+                if (i === state.currentStep) {
+                    // 当前步骤：显示输入框
+                    const inputHtml = `
+                        <div style="margin-top: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px; border-left: 4px solid ${borderColor};">
+                            <div style="font-size: 15px; margin-bottom: 12px; color: #333; line-height: 1.6;">👉 ${step.question}</div>
+                            <div style="font-size: 13px; color: #666; margin-bottom: 12px; padding: 8px; background: #fff3cd; border-radius: 6px;">💡 提示：${step.hint}</div>
+                            <textarea id="stepInput" placeholder="请写下你的答案..." style="width: 100%; padding: 12px; border: 2px solid ${borderColor}; border-radius: 8px; font-size: 15px; min-height: 80px; resize: vertical;"></textarea>
                             <button class="btn btn-primary" style="margin-top: 12px;" onclick="submitStepAnswer()">确认答案</button>
                         </div>
-                    ` : `
-                        <div style="margin-top: 12px; font-size: 14px; color: #666; padding: 8px; background: #f5f5f5; border-radius: 8px;">
-                            ${step.fillBlank} <strong>${state.userAnswers[i] || '___'}</strong>
-                        </div>
                     `;
                     
                     card.innerHTML = `
-                        <span class="step-number">${i + 1}</span>
+                        <span class="step-number" style="background:${borderColor}">${i + 1}</span>
                         <strong>${step.title}</strong>
-                        ${i === state.currentStep ? `<p style="margin-top: 8px;">${step.question}</p>${inputHtml}` : ''}
+                        ${inputHtml}
                     `;
                 } else {
-                    // 最终答案
-                    const userAnswer = state.userAnswers[i] || '';
-                    const inputHtml = i === state.currentStep ? `
-                        <div style="margin-top: 16px; padding: 16px; background: #e8f5e9; border-radius: 12px; border-left: 4px solid #00B894;">
-                            <div style="font-size: 16px; margin-bottom: 8px; color: #666;">👉 ${step.question}</div>
-                            <div style="font-size: 20px; font-weight: 600; margin-bottom: 12px;">${step.fillBlank} <span style="color: var(--primary); background: #fff; padding: 2px 8px; border-radius: 4px;">${userAnswer || '?'}</span></div>
-                            <input type="text" id="stepInput" placeholder="请写出你的答案..." style="width: 100%; padding: 12px; border: 2px solid #00B894; border-radius: 8px; font-size: 16px;">
-                            <button class="btn btn-success" style="margin-top: 12px;" onclick="submitStepAnswer()">确认答案</button>
-                        </div>
-                    ` : `
-                        <div style="margin-top: 12px; font-size: 14px; color: #666; padding: 8px; background: #e8f5e9; border-radius: 8px;">
-                            ${step.fillBlank} <strong>${state.userAnswers[i] || '___'}</strong>
-                        </div>
-                    `;
-                    
+                    // 非当前步骤：只显示摘要
+                    const statusIcon = i < state.currentStep ? '✅' : '⏳';
                     card.innerHTML = `
-                        <span class="step-number">${i + 1}</span>
+                        <span class="step-number" style="background:${i < state.currentStep ? '#27ae60' : '#bdc3c7'}">${statusIcon}</span>
                         <strong>${step.title}</strong>
-                        ${i === state.currentStep ? `<p style="margin-top: 8px;">${step.question}</p>${inputHtml}` : ''}
+                        <div style="margin-top: 8px; font-size: 13px; color: #666; padding: 8px; background: #f5f5f5; border-radius: 6px;">
+                            ${userAnswer || '未完成'}
+                        </div>
                     `;
                 }
                 container.appendChild(card);
@@ -1570,11 +1580,8 @@
             // Show welcome message for first step
             if (state.currentStep === 0) {
                 const firstStep = state.guidanceSteps[0];
-                if (firstStep.type === 'known') {
-                    const itemsList = firstStep.items.map((item, i) => `${i+1}. ${item}`).join('\n');
-                    addMessage('ai', `小朋友，你好！🎉\n\n我们先找出题目中的直接已知条件：\n${itemsList}\n\n好，现在我们知道这些了。接下来要求什么？点击「确认答案」继续~`);
-                    speak('你好！我们先找出已知条件，然后一步步求出答案！');
-                }
+                addMessage('ai', `小朋友，你好！🎉\n\n我们用4步来解决这道题：\n1️⃣ 审题 - 找出已知数和关键词\n2️⃣ 建模 - 判断用什么运算\n3️⃣ 分步计算 - 一步步算出答案\n4️⃣ 验证 - 代回去检查对不对\n\n现在我们开始第1步：${firstStep.question}\n\n在下方输入你的答案吧~`);
+                speak('你好！我们用4步来解决这道数学题，先找出已知条件和关键词！');
             }
             
             // Focus input
@@ -1594,15 +1601,26 @@
             // 存储用户答案
             state.userAnswers[state.currentStep] = answer;
             
-            // 检查答案是否正确（支持多种格式）
-            const correctAnswer = currentStep.answer;
-            const isCorrect = checkAnswer(answer, correctAnswer);
-            
             addMessage('user', answer);
             
-            if (isCorrect) {
-                alert('🎉 真棒！我们来看下一步～');
-                speak('答对了！' + correctAnswer);
+            // 对于开放式问题（步骤1-3），只要用户写了东西就算对
+            // 只有步骤4（验证）需要检查答案
+            let isCorrect = true;
+            if (currentStep.type === 'step4_verify') {
+                // 验证步骤：检查是否说"对"或包含正确判断
+                const correctAnswer = currentStep.answer || '对';
+                isCorrect = checkAnswer(answer, correctAnswer);
+            }
+            
+            if (isCorrect || answer.length > 0) {
+                // 步骤完成提示
+                let successMsg = '🎉 太棒了！我们来看下一步～';
+                if (currentStep.type === 'step4_verify') {
+                    successMsg = '🎉 验证完成！你真棒！';
+                }
+                
+                alert(successMsg);
+                speak(currentStep.type === 'step4_verify' ? '验证完成，你真棒！' : '答对了！');
                 
                 setTimeout(() => {
                     nextStep();
