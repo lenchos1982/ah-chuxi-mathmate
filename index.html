@@ -1458,6 +1458,22 @@
         }
 
         function renderGuidanceSteps() {
+            // 显示顶部提示
+            const step = state.guidanceSteps[state.currentStep];
+            let hintText = "请在下方输入答案";
+            if (step && step.type === 'known') hintText = "以上是题目已知条件，请看下方第一个问题";
+            else if (step && step.type === 'derive') hintText = "请回答下方的填空题";
+            else if (step && step.type === 'final') hintText = "这是最后一步，求总数量！";
+            
+            // 添加或更新顶部提示
+            let hintDiv = document.getElementById('stepHint');
+            if (!hintDiv) {
+                hintDiv = document.createElement('div');
+                hintDiv.id = 'stepHint';
+                hintDiv.style.cssText = "position:fixed; top:60px; left:0; right:0; background:#4CAF50; color:white; padding:12px; text-align:center; font-size:16px; z-index:1000; box-shadow:0 2px 4px rgba(0,0,0,0.1);";
+                document.body.insertBefore(hintDiv, document.body.firstChild);
+            }
+            hintDiv.textContent = hintText;
             const container = document.getElementById('stepsContainer');
             container.innerHTML = '';
             
@@ -1553,14 +1569,14 @@
             addMessage('user', answer);
             
             if (isCorrect) {
-                addMessage('ai', `答对啦！🎉 ${correctAnswer}`);
+                alert('🎉 真棒！我们来看下一步～');
                 speak('答对了！' + correctAnswer);
                 
                 setTimeout(() => {
                     nextStep();
                 }, 1000);
             } else {
-                addMessage('ai', `再想想哦～ 提示：${currentStep.fillBlank.replace('?', '')} ${correctAnswer.slice(0, 2)}...`);
+                alert('不对哦，再试一次！💪');
                 speak('再想想看，给你一点点提示');
             }
         }
