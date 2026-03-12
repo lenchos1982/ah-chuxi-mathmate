@@ -720,7 +720,10 @@
             <div class="card">
                 <h3 style="margin-bottom: 12px;">💡 题目解析</h3>
                 <div id="analysisContent">
-                    <div class="loading"><div class="spinner"></div></div>
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p style="margin-top: 12px; color: var(--text-light);">正在分析题目，请稍候...</p>
+                    </div>
                 </div>
             </div>
 
@@ -1174,10 +1177,30 @@
                 return;
             }
             
-            showPage('guidance');
+            // 先跳转到分析页面，显示加载提示
+            showPage('analysis');
             document.getElementById('problemText').textContent = state.problemText;
             
-            generateGuidanceSteps();
+            // 显示加载状态
+            document.getElementById('analysisContent').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 12px; color: var(--text-light);">正在分析题目，请稍候...</p>
+                </div>
+            `;
+            
+            // 调用AI分析
+            analyzeWithAI(state.problemText).then(() => {
+                // 分析完成后跳转到引导页面
+                generateGuidanceSteps();
+            }).catch(err => {
+                console.error('分析失败:', err);
+                document.getElementById('analysisContent').innerHTML = `
+                    <div class="tip" style="background: #ffebee; color: #c62828;">
+                        分析失败: ${err.message || '请检查API设置'}
+                    </div>
+                `;
+            });
         }
 
         async function analyzeWithAI(problem) {
@@ -1193,11 +1216,18 @@
             try {
                 const response = await callAI(prompt);
                 state.analysis = response;
+                
+                // 更新分析内容显示
+                document.getElementById('analysisContent').innerHTML = `
+                    <div style="line-height: 1.8; white-space: pre-wrap;">${response}</div>
+                `;
+                
                 speak(response);
+                return response;
             } catch (err) {
                 console.error('AI调用详细错误:', err);
                 const errMsg = err.message || '未知错误';
-                alert('AI调用失败: ' + errMsg);
+                throw new Error('AI调用失败: ' + errMsg);
             }
         }
 
