@@ -1169,10 +1169,8 @@
             
             showPage('guidance');
             document.getElementById('problemText').textContent = state.problemText;
-            document.getElementById('analysisContent').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
             
-            // Call AI to analyze
-            analyzeWithAI(state.problemText);
+            generateGuidanceSteps();
         }
 
         async function analyzeWithAI(problem) {
@@ -1188,12 +1186,10 @@
             try {
                 const response = await callAI(prompt);
                 state.analysis = response;
-                document.getElementById('analysisContent').textContent = response;
                 speak(response);
             } catch (err) {
                 console.error('AI调用详细错误:', err);
                 const errMsg = err.message || '未知错误';
-                document.getElementById('analysisContent').textContent = '❌ 分析失败\n\n错误: ' + errMsg + '\n\n请检查：\n1. API Key是否正确\n2. 网络是否正常\n3. 模型是否选择正确';
                 alert('AI调用失败: ' + errMsg);
             }
         }
@@ -1235,7 +1231,6 @@
             console.log('请求体:', JSON.stringify(config.body));
             
             // 显示在界面上帮助调试
-            document.getElementById('analysisContent').innerHTML = `
                 <div style="font-size:12px; color:#666; text-align:left;">
                 <p>模型: ${state.model}</p>
                 <p>URL: ${state.apiUrl}</p>
